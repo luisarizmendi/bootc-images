@@ -425,23 +425,6 @@ jobs:
           echo "NEXT_TAG=$NEXT_TAG" | tee -a "$GITHUB_ENV"
           echo "next=$NEXT_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Enable user namespaces for bwrap
-        run: |
-          # Install sysctl
-          dnf -y install procps-ng
-          
-          # Enable unprivileged user namespaces
-          echo "kernel.unprivileged_userns_clone=1" | tee -a /etc/sysctl.conf
-          sysctl -p || true
-          
-          # Also try the RHEL-specific setting
-          echo "user.max_user_namespaces=15000" | tee -a /etc/sysctl.conf
-          sysctl -p || true
-          
-          # Verify the settings
-          sysctl kernel.unprivileged_userns_clone || echo "Setting not available"
-          sysctl user.max_user_namespaces || echo "Setting not available"
-
       - name: Build platform-specific image with Buildah
         id: build
         uses: redhat-actions/buildah-build@v2
