@@ -425,6 +425,11 @@ jobs:
           echo "NEXT_TAG=$NEXT_TAG" | tee -a "$GITHUB_ENV"
           echo "next=$NEXT_TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Enable user namespaces
+        run: |
+          echo "kernel.unprivileged_userns_clone=1" | tee -a /etc/sysctl.conf
+          sysctl -p
+
       - name: Build platform-specific image with Buildah
         id: build
         uses: redhat-actions/buildah-build@v2
