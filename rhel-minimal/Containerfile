@@ -1,0 +1,21 @@
+FROM registry.redhat.io/rhel10/rhel-bootc:latest as builder
+RUN /usr/libexec/bootc-base-imagectl build-rootfs --manifest=minimal /target-rootfs
+
+FROM scratch
+COPY --from=builder /target-rootfs/ /
+
+
+RUN <<EORUN
+set -xeuo pipefail
+dnf -y install NetworkManager openssh-server
+dnf clean all
+rm /var/{log,cache,lib}/* -rf
+bootc container lint
+EORUN
+
+LABEL containers.bootc 1
+LABEL ostree.bootable 1
+
+STOPSIGNAL SIGRTMIN+3
+
+CMD ["/sbin/init"]
