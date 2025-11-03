@@ -5,6 +5,8 @@ ARG USHIFT_VER='4.20'
 
 FROM ${BASE_IMAGE_URL}:${BASE_IMAGE_TAG}
 
+ARG USHIFT_VER
+
 RUN dnf config-manager \
         --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
         --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms
