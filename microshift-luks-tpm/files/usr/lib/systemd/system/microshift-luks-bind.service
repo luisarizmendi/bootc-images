@@ -1,0 +1,12 @@
+[Unit]
+Description=Bind LUKS devices to TPM2
+After=systemd-udev-trigger.service
+ConditionPathExists=!/etc/microshift/state/luks_bound.list
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/10-microshift-luks-bind.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

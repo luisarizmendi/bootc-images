@@ -1,0 +1,12 @@
+[Unit]
+Description=Setup LVM for MicroShift
+After=microshift-luks-bind.service
+Requires=microshift-luks-bind.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/20-microshift-lvm-setup.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
