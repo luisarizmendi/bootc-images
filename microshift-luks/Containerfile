@@ -1,6 +1,6 @@
 ARG BASE_IMAGE_URL='registry.redhat.io/rhel10/rhel-bootc'
 ARG BASE_IMAGE_TAG='10.0'
-ARG USHIFT_VER=4.20
+ARG USHIFT_VER='4.20'
 ########################################
 
 FROM ${BASE_IMAGE_URL}:${BASE_IMAGE_TAG}
