@@ -43,4 +43,3 @@ COPY files/ /
 
 RUN chmod +x /usr/local/sbin/* && \
     systemctl enable /etc/systemd/system/microshift-*.service || true
-
