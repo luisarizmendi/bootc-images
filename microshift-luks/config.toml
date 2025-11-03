@@ -1,0 +1,40 @@
+[[customizations.user]]
+name = "admin"
+password = "$6$/7rTITXmb1xpkB52$1L6xl53aTMayMIqhdxh6VxLGguy2CUxxf50oqcJGElUgcyx/8nTIEBKtvP6erLtwwLS5B6ZyCEDkrZMGC8ydN/"
+groups = ["wheel"]
+
+[customizations.installer.kickstart]
+contents = '''
+network --bootproto=dhcp --device=link --activate --onboot=on --hostname=edge001
+zerombr
+
+%pre --interpreter=/bin/bash
+set -e
+
+# Detect the first non-removable physical disk
+DISK=$(lsblk -ndo NAME,TYPE,RO,RM | awk '$2=="disk" && $3==0 && $4==0 {print "/dev/"$1; exit}')
+TOTAL=$(blockdev --getsize64 "$DISK")
+LVMS_SIZE_MIB=$(( TOTAL * 30 / 100 / 1048576 ))
+SYSROOT_SIZE_MIB=$(( TOTAL * 15 / 100 / 1048576 ))
+
+cat <<EOF > /tmp/dynamic-partition.ks
+clearpart --all
+reqpart --add-boot
+
+# SWAP Partition
+part swap --size=2048 --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
+
+# Physical partition for LVMS maxsize=desired_percentage
+part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --encrypted --passphrase="redhat"
+
+part / --grow --fstype xfs --encrypted --passphrase="redhat"
+EOF
+%end
+
+%include /tmp/dynamic-partition.ks
+
+%post --log=/root/ks-post.log
+%end
+
+reboot --eject
+'''

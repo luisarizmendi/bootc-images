@@ -1,0 +1,28 @@
+ARG BASE_IMAGE_URL='registry.redhat.io/rhel10/rhel-bootc'
+ARG BASE_IMAGE_TAG='10.0'
+ARG USHIFT_VER=4.20
+########################################
+
+FROM ${BASE_IMAGE_URL}:${BASE_IMAGE_TAG}
+
+RUN dnf config-manager \
+        --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
+        --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms
+
+RUN dnf install -y firewalld microshift lvm2 cryptsetup clevis clevis-luks clevis-tpm2 tpm2-tools udev && \
+    systemctl enable microshift && \
+    dnf clean all
+
+# Mandatory firewall configuration
+RUN firewall-offline-cmd --zone=public --add-port=22/tcp && \
+    firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
+    firewall-offline-cmd --zone=trusted --add-source=169.254.169.1
+
+# Copy files into the image
+COPY files/ /
+
+# Make script executable
+RUN chmod +x /usr/local/sbin/microshift-lvms-setup.sh && \
+    systemctl enable microshift-lvms-setup.service || true && \
+    systemctl enable microshift-make-rshared.service || true
+
