@@ -1,11 +1,12 @@
 [customizations.installer.kickstart]
 contents = '''
-network --bootproto=dhcp --device=link --activate --onboot=on --hostname=edge001
+network --bootproto=dhcp --device=link --activate --onboot=on
 zerombr
 
-user --name=admin --password=$6$/7rTITXmb1xpkB52$1L6xl53aTMayMIqhdxh6VxLGguy2CUxxf50oqcJGElUgcyx/8nTIEBKtvP6erLtwwLS5B6ZyCEDkrZMGC8ydN/ --groups=wheel
+user --name=admin --password=$6$nRAle.gs2bcemfTO$n706swfUtMOVfIZ2QngZCQD4OWGoOwWhAYvbzh1zPuMgD1t.Qo6b.3LQPcoVNZnQZ7RjIJi43Jik1VMbRiR.B/ --groups=wheel --iscrypted
 
-%pre --interpreter=/bin/bash
+# Dynamic partitioning
+%pre --interpreter=/bin/bash --log=/root/ks-pre.log
 set -e
 
 # Detect the first non-removable physical disk
@@ -15,16 +16,16 @@ LVMS_SIZE_MIB=$(( TOTAL * 30 / 100 / 1048576 ))
 SYSROOT_SIZE_MIB=$(( TOTAL * 15 / 100 / 1048576 ))
 
 cat <<EOF > /tmp/dynamic-partition.ks
-clearpart --all
-reqpart --add-boot
+# Boot partition (unencrypted)
+part /boot --size=1024 --fstype=xfs --ondisk=$(basename $DISK)
 
-# SWAP Partition
-part swap --size=2048 --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
+# Encrypted physical volume for LVM
+part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --encrypted --passphrase="redhat" --ondisk=$(basename $DISK)
 
-# Physical partition for LVMS maxsize=desired_percentage
-part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --encrypted --passphrase="redhat"
-
-part / --grow --fstype xfs --encrypted --passphrase="redhat"
+# LVM setup inside the encrypted PV
+volgroup vg_system pv.01
+logvol / --vgname=vg_system --size=${SYSROOT_SIZE_MIB} --name=root --fstype=xfs
+logvol swap --vgname=vg_system --size=2048 --name=swap
 EOF
 %end
 
