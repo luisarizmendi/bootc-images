@@ -1,12 +1,9 @@
-[[customizations.user]]
-name = "admin"
-password = "$6$/7rTITXmb1xpkB52$1L6xl53aTMayMIqhdxh6VxLGguy2CUxxf50oqcJGElUgcyx/8nTIEBKtvP6erLtwwLS5B6ZyCEDkrZMGC8ydN/"
-groups = ["wheel"]
-
 [customizations.installer.kickstart]
 contents = '''
 network --bootproto=dhcp --device=link --activate --onboot=on --hostname=edge001
 zerombr
+
+user --name=admin --password=$6$/7rTITXmb1xpkB52$1L6xl53aTMayMIqhdxh6VxLGguy2CUxxf50oqcJGElUgcyx/8nTIEBKtvP6erLtwwLS5B6ZyCEDkrZMGC8ydN/ --groups=wheel
 
 %pre --interpreter=/bin/bash
 set -e
