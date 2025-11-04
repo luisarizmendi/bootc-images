@@ -30,7 +30,7 @@ RUN dnf config-manager \
         --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms
 
 RUN dnf install -y firewalld microshift microshift-cert-manager microshift-olm dialog clevis clevis-dracut clevis-luks clevis-pin-tpm2 clevis-systemd tpm2-tools tpm2-tss pciutils && \
-    systemctl enable microshift && \
+    systemctl enable microshif* && \
     dnf clean all
 
 RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \

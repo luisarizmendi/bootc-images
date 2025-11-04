@@ -1,12 +1,3 @@
-apiServer:
-    subjectAltNames: 
-        - microshift.lablocal
-        - microshift.X.X.X.X.nip.io
-        - {{ ansible_host }}
-dns:
-  baseDomain: X.X.X.X.nip.io
-
-
 debugging:
     # Valid values are: "Normal", "Debug", "Trace", "TraceAll".
     logLevel: Normal
