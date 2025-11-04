@@ -30,7 +30,7 @@ RUN dnf config-manager \
         --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms
 
 RUN dnf install -y firewalld microshift microshift-cert-manager microshift-olm dialog clevis clevis-dracut clevis-luks clevis-pin-tpm2 clevis-systemd tpm2-tools tpm2-tss pciutils && \
-    systemctl enable microshif* && \
+    systemctl enable microshift && \
     dnf clean all
 
 RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
@@ -45,8 +45,9 @@ RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
 COPY files/ /
 
 RUN chmod +x /usr/local/sbin/* && \
-    ln -s /etc/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
-    systemctl enable /etc/systemd/system/microshift-*.service || true
+    ln -s /usr/lib/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
+    ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service && \
+    ln -s /usr/lib/systemd/system/microshift-make-rshared.service /etc/systemd/system/multi-user.target.wants/microshift-make-rshared.service
 
 # Generate new initramfs.img    
 RUN set -xe; kver=$(ls /usr/lib/modules | sort -Vr | head -n1); env DRACUT_NO_XATTR=1 dracut -vf /usr/lib/modules/$kver/initramfs.img "$kver"
