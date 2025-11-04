@@ -45,4 +45,4 @@ RUN chmod +x /usr/local/sbin/* && \
     systemctl enable /etc/systemd/system/microshift-*.service || true
 
 # Generate new initramfs.img    
-RUN set -xe; kver=$(ls /usr/lib/modules | sort -Vr | head -n1); env DRACUT_NO_XATTR=1 dracut -vf /usr/lib/modules/$kver/initramfs.img "$kver"    
+RUN set -xe; kver=$(ls /usr/lib/modules | sort -Vr | head -n1); env DRACUT_NO_XATTR=1 dracut -vf /usr/lib/modules/$kver/initramfs.img "$kver"

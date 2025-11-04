@@ -40,7 +40,7 @@ user --name=edge --shell=/bin/bash --groups=wheel --password=r3dh4t --plaintext
 PASSPHRASE="redhat"
 
 # If you define KEEP_PASSPHRASE=1, the recovery passphrase is not removed
-# KEEP_PASSPHRASE="1"
+KEEP_PASSPHRASE="1"
 KEEP_PASSPHRASE="${KEEP_PASSPHRASE:-}"
 
 # Create volume group for MicroShift LVMS
