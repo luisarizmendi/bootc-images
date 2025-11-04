@@ -89,8 +89,20 @@ for dev in $LUKS_DEVS; do
   
   # Enroll the device with TPM2, binding to PCR 7 (secure boot policy)
   # You can adjust PCRs as needed for your security policy
-  echo -n "$PASSPHRASE" | systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 "$dev"
-  
+  if [ -e /dev/tpmrm0 ]; then
+    timeout 30s bash -c "echo -n '$PASSPHRASE' | systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 '$dev'"
+    RC=$?
+    if [ $RC -eq 0 ]; then
+        echo "Success: $dev enrolled with TPM2"
+    elif [ $RC -eq 124 ]; then
+        echo "Timeout enrolling $dev (no TPM response)"
+    else
+        echo "systemd-cryptenroll failed ($RC)"
+    fi
+  else
+    echo "TPM2 device not present, skipping enrollment"
+  fi  
+
   if [ $? -eq 0 ]; then
     echo "Success: $dev enrolled with TPM2"
     
