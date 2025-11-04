@@ -53,12 +53,10 @@ RUN chmod +x /usr/local/sbin/* && \
     ln -s /usr/lib/systemd/system/microshift-make-rshared.service /etc/systemd/system/multi-user.target.wants/microshift-make-rshared.service
 
 # Generate new initramfs.img with systemd-cryptenroll support
-# Include cryptsetup, systemd-cryptsetup, and TPM2 modules in initramfs
-# Explicitly omit clevis module since we're using systemd-cryptenroll instead
+# Note: 'systemd' module includes systemd-cryptsetup functionality automatically
 RUN set -xe; \
     kver=$(ls /usr/lib/modules | sort -Vr | head -n1); \
-    dracut --force --omit "clevis" \
-           --add "crypt systemd systemd-cryptsetup tpm2-tss" \
-           --install "systemd-cryptenroll cryptsetup tpm2_*" \
+    dracut --force --add "crypt systemd tpm2-tss" \
+           --install "systemd-cryptenroll systemd-cryptsetup cryptsetup" \
            --no-hostonly \
            /usr/lib/modules/$kver/initramfs.img "$kver"
