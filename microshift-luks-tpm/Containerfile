@@ -57,6 +57,6 @@ RUN chmod +x /usr/local/sbin/* && \
 RUN set -xe; \
     kver=$(ls /usr/lib/modules | sort -Vr | head -n1); \
     dracut --force --add "crypt systemd tpm2-tss" \
-           --install "systemd-cryptenroll systemd-cryptsetup cryptsetup" \
+           --install "systemd-cryptenroll cryptsetup" \
            --no-hostonly \
            /usr/lib/modules/$kver/initramfs.img "$kver"
