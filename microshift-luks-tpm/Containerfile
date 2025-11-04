@@ -46,3 +46,4 @@ RUN chmod +x /usr/local/sbin/* && \
 
 # Generate new initramfs.img    
 RUN set -xe; kver=$(ls /usr/lib/modules | sort -Vr | head -n1); env DRACUT_NO_XATTR=1 dracut -vf /usr/lib/modules/$kver/initramfs.img "$kver"
+
