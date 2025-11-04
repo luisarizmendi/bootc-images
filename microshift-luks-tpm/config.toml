@@ -49,7 +49,7 @@ echo "Detecting LVMS partition..."
 echo "Available LUKS devices: $(blkid -t TYPE="crypto_LUKS" -o device | tr '\n' ' ')"
 
 # Get the UUID of the mapper being used as swap
-SWAP_UUID=$(lsblk -f -n | grep '\\[SWAP\\]' | grep 'luks-' | awk '{print $2}' | awk -F'luks-' '{print $2}')
+SWAP_UUID=$(lsblk -f -n | grep 'SWAP' | grep 'luks-' | awk '{print $2}' | awk -F'luks-' '{print $2}')
 echo "Swap UUID: $SWAP_UUID"
 LVMS_PART=""
 for dev in $(blkid -t TYPE="crypto_LUKS" -o device); do
