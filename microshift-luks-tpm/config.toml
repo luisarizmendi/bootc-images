@@ -5,7 +5,7 @@ zerombr
 
 user --name=admin --password=$6$nRAle.gs2bcemfTO$n706swfUtMOVfIZ2QngZCQD4OWGoOwWhAYvbzh1zPuMgD1t.Qo6b.3LQPcoVNZnQZ7RjIJi43Jik1VMbRiR.B/ --groups=wheel --iscrypted
 
-%pre --interpreter=/bin/bash
+%pre --interpreter=/bin/bash --log=/var/log/anaconda/pre-install.log
 set -e
 
 # Detect the first non-removable physical disk
@@ -34,7 +34,7 @@ EOF
 # Include the kickstart block
 %include /tmp/dynamic-partition.ks
 user --name=edge --shell=/bin/bash --groups=wheel --password=r3dh4t --plaintext
-%post
+%post --log=/var/log/anaconda/post-install.log
 
 # Passphrase used by kickstart/autopart
 PASSPHRASE="redhat"

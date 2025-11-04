@@ -1,0 +1,15 @@
+[Unit]
+Description=Create Microshift config dynamically
+After=network-online.target mac-hostname.service
+Wants=network-online.target mac-hostname.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/create-microshift-dynamic-conf.sh
+StandardOutput=journal
+StandardError=journal
+RemainAfterExit=no
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

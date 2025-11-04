@@ -33,15 +33,19 @@ RUN dnf install -y firewalld microshift microshift-cert-manager microshift-olm d
     systemctl enable microshift && \
     dnf clean all
 
-# Mandatory firewall configuration
-RUN firewall-offline-cmd --zone=public --add-port=22/tcp && \
-    firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
-    firewall-offline-cmd --zone=trusted --add-source=169.254.169.1
+RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
+    firewall-offline-cmd --zone=trusted --add-source=169.254.169.1 && \
+    firewall-offline-cmd --zone=public --add-port=22/tcp && \
+    firewall-offline-cmd --zone=public --add-port=80/tcp && \
+    firewall-offline-cmd --zone=public --add-port=443/tcp && \
+    firewall-offline-cmd --zone=public --add-port=6443/tcp && \
+    firewall-offline-cmd --zone=public --add-port=30000-32767/tcp
 
 # Copy files into the image
 COPY files/ /
 
 RUN chmod +x /usr/local/sbin/* && \
+    ln -s /etc/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
     systemctl enable /etc/systemd/system/microshift-*.service || true
 
 # Generate new initramfs.img    
