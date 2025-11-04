@@ -5,7 +5,7 @@ zerombr
 
 user --name=admin --password=$6$nRAle.gs2bcemfTO$n706swfUtMOVfIZ2QngZCQD4OWGoOwWhAYvbzh1zPuMgD1t.Qo6b.3LQPcoVNZnQZ7RjIJi43Jik1VMbRiR.B/ --groups=wheel --iscrypted
 
-%pre --interpreter=/bin/bash --log=/var/log/anaconda/pre-install.log
+%pre --interpreter=/bin/bash
 set -e
 
 # Detect the first non-removable physical disk
@@ -79,15 +79,21 @@ if [ -z "$LVMS_PART" ]; then
     echo "WARNING: LVMS partition not detected yet"
 fi
 
-# Bind all LUKS partitions to TPM2
-echo "Binding LUKS partitions to TPM2..."
+# Bind all LUKS partitions to TPM2 using systemd-cryptenroll
+echo "Enrolling LUKS partitions to TPM2 using systemd-cryptenroll..."
 LUKS_DEVS=$(blkid -t TYPE="crypto_LUKS" -o device | sort -u)
 echo "LUKS partitions: $LUKS_DEVS"
+
 for dev in $LUKS_DEVS; do
-  echo "Binding $dev to TPM2..."
-  echo -n "$PASSPHRASE" | clevis luks bind -y -k - -d "$dev" tpm2 '{"hash":"sha256","key":"rsa"}'
+  echo "Enrolling $dev to TPM2..."
+  
+  # Enroll the device with TPM2, binding to PCR 7 (secure boot policy)
+  # You can adjust PCRs as needed for your security policy
+  echo -n "$PASSPHRASE" | systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 "$dev"
+  
   if [ $? -eq 0 ]; then
-    echo "Success: $dev"
+    echo "Success: $dev enrolled with TPM2"
+    
     if [ "$LVMS_PART" = "$dev" ]; then
         echo "LVMS partition: $LVMS_PART"
         UUID=$(blkid -s UUID -o value "$dev")
@@ -124,19 +130,30 @@ EOF
         LVMS_PART="not_found"
         echo "ERROR: LVMS partition not found"
     fi
+    
+    # Remove the passphrase if KEEP_PASSPHRASE is not set
     if [ -z "$KEEP_PASSPHRASE" ]; then
       echo "Removing passphrase from $dev"
       echo -n "$PASSPHRASE" | cryptsetup luksRemoveKey "$dev"
     fi
+  else
+    echo "ERROR: Failed to enroll $dev with TPM2"
   fi
 done
+
+# Update crypttab to use TPM2 automatic unlocking
 for part in $(lsblk -rno NAME,FSTYPE | awk '$2=="crypto_LUKS"{print $1}'); do
   uuid=$(blkid -s UUID -o value /dev/$part)
   name="luks-$uuid"
   if ! grep -q "$uuid" /etc/crypttab; then
-    echo "$name UUID=$uuid none discard" >> /etc/crypttab
+    # Add entry with tpm2-device=auto for systemd-cryptsetup
+    echo "$name UUID=$uuid none tpm2-device=auto,discard" >> /etc/crypttab
   fi
 done
+
+# Regenerate initramfs to include systemd-cryptenroll support
+echo "Regenerating initramfs..."
+dracut -f --regenerate-all
 
 %end
 reboot --eject

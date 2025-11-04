@@ -29,3 +29,6 @@ chmod 644 "${CONFIG_FILE}"
 echo "Created ${CONFIG_FILE} with hostname=${HOSTNAME}, IP=${IP}"
 
 systemctl restart microshift
+
+mkdir -p /root/.kube
+cp /var/lib/microshift/resources/kubeadmin/kubeconfig /root/.kube/config
