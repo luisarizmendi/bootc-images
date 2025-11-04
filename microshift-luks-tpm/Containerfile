@@ -54,9 +54,11 @@ RUN chmod +x /usr/local/sbin/* && \
 
 # Generate new initramfs.img with systemd-cryptenroll support
 # Include cryptsetup, systemd-cryptsetup, and TPM2 modules in initramfs
+# Explicitly omit clevis module since we're using systemd-cryptenroll instead
 RUN set -xe; \
     kver=$(ls /usr/lib/modules | sort -Vr | head -n1); \
-    dracut --force --add "crypt systemd systemd-cryptsetup tpm2-tss" \
+    dracut --force --omit "clevis" \
+           --add "crypt systemd systemd-cryptsetup tpm2-tss" \
            --install "systemd-cryptenroll cryptsetup tpm2_*" \
            --no-hostonly \
            /usr/lib/modules/$kver/initramfs.img "$kver"
