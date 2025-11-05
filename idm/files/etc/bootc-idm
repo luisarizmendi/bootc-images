@@ -1,0 +1,10 @@
+# IdM Configuration
+# These can be overridden by environment variables or kernel parameters
+
+IPA_SERVER=idm.example.com
+IPA_DOMAIN=example.com
+IPA_REALM=EXAMPLE.COM
+
+# The enrollment password should be provided securely
+# via environment variable or kernel parameter
+# IPA_ENROLL_PASSWORD=your_password_here

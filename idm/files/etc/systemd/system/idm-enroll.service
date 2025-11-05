@@ -1,0 +1,15 @@
+[Unit]
+Description=IdM Client Enrollment
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/etc/ipa/default.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/idm-enroll.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
