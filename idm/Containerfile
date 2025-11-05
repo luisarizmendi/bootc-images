@@ -11,7 +11,6 @@ RUN dnf install -y \
     wpa_supplicant \
     && dnf clean all
 
-
 COPY files/ /
 
 RUN mkdir -p /etc/pki/tls/private /etc/pki/tls/certs && \
@@ -22,4 +21,3 @@ RUN chmod +x /usr/local/sbin/* && \
     chmod +x /etc/NetworkManager/dispatcher.d/99-802.1x-cert && \
     systemctl enable certmonger && \
     ln -s /usr/lib/systemd/system/idm-enroll.service/etc/systemd/system/multi-user.target.wants/idm-enroll.service
-
