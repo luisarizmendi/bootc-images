@@ -1,5 +1,5 @@
 [connection]
-id=wifi-wpa
+id=wifi
 type=wifi
 autoconnect=true
 interface-name=wlP1p1s0

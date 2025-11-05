@@ -1,3 +1,16 @@
+[connection]
+id=wifi-8021x
+type=wifi
+autoconnect=true
+interface-name=wlP1p1s0
+
+[wifi]
+ssid=YOUR_WIFI_NAME
+mode=infrastructure
+
+[wifi-security]
+key-mgmt=wpa-eap
+
 [802-1x]
 eap=tls;
 identity=bootstrap-client
@@ -6,6 +19,8 @@ client-cert=/etc/pki/tls/bootstrap/8021x-bootstrap.pem
 private-key=/etc/pki/tls/bootstrap/8021x-bootstrap.key
 private-key-password-flags=0
 
-[connection]
-type=ethernet
-autoconnect=true
+[ipv4]
+method=auto
+
+[ipv6]
+method=auto

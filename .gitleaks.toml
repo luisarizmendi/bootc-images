@@ -3,6 +3,8 @@ title = "Gitleaks Configuration"
 [allowlist]
 description = "Ignore specific files"
 paths = [
-    "README.md",      # Only matches README.md at the root
-    ".*/config.toml", # Matches config.toml at any path
+    "README.md",
+    ".*/config.toml",
+    ".*/8021x-bootstrap.key", 
+    ".*/8021x-bootstrap.pem",
 ]
