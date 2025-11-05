@@ -6,7 +6,7 @@ zerombr
 user --name=admin --password=$6$nRAle.gs2bcemfTO$n706swfUtMOVfIZ2QngZCQD4OWGoOwWhAYvbzh1zPuMgD1t.Qo6b.3LQPcoVNZnQZ7RjIJi43Jik1VMbRiR.B/ --groups=wheel --iscrypted
 
 %pre --interpreter=/bin/bash
-set -e
+set -ex
 
 # Detect the first non-removable physical disk
 DISK=$(lsblk -ndo NAME,TYPE,RO,RM | awk '$2=="disk" && $3==0 && $4==0 {print "/dev/"$1; exit}')
@@ -17,7 +17,6 @@ LVMS_SIZE_MIB=$(( TOTAL * 30 / 100 / 1048576 ))
 SYSROOT_SIZE_MIB=$(( TOTAL * 15 / 100 / 1048576 ))
 echo "Disk: $DISK (${LVMS_SIZE_MIB} MiB for LVMS)"
 
-# Generate dynamic fragment with valid Kickstart directives
 cat <<EOF > /tmp/dynamic-partition.ks
 clearpart --all
 reqpart --add-boot
@@ -25,108 +24,73 @@ reqpart --add-boot
 # SWAP Partition
 part swap --size=2048 --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
 
-# Physical partition for LVMS maxsize=desired_percentage
+# Physical partition for LVMS
 part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --encrypted --passphrase="redhat"
 part / --grow --fstype xfs --encrypted --passphrase="redhat"
 EOF
 %end
 
-# Include the kickstart block
 %include /tmp/dynamic-partition.ks
 user --name=edge --shell=/bin/bash --groups=wheel --password=r3dh4t --plaintext
+
 %post --log=/var/log/anaconda/post-install.log
+set -e
 
-# Passphrase used by kickstart/autopart
 PASSPHRASE="redhat"
+KEEP_PASSPHRASE="1"  # set empty to remove recovery key
 
-# If you define KEEP_PASSPHRASE=1, the recovery passphrase is not removed
-KEEP_PASSPHRASE="1"
-KEEP_PASSPHRASE="${KEEP_PASSPHRASE:-}"
-
-# Create volume group for MicroShift LVMS
-# Detect LVMS partition: crypto_LUKS with mapper but not in use
-echo "Detecting LVMS partition..."
-echo "Available LUKS devices: $(blkid -t TYPE="crypto_LUKS" -o device | tr '\n' ' ')"
-
-# Get the UUID of the mapper being used as swap
-SWAP_UUID=$(lsblk -f -n | grep 'SWAP' | grep 'luks-' | awk '{print $2}' | awk -F'luks-' '{print $2}')
-echo "Swap UUID: $SWAP_UUID"
-LVMS_PART=""
-for dev in $(blkid -t TYPE="crypto_LUKS" -o device); do
-    UUID=$(blkid -s UUID -o value "$dev")
-    MAPPER="/dev/mapper/luks-$UUID"
-    
-    # Check if the mapper exists
-    if [ -e "$MAPPER" ]; then
-        echo "Checking mapper: $MAPPER for device $dev"
-        
-        # Check that it is NOT swap (comparing UUIDs)
-        if [ "$UUID" != "$SWAP_UUID" ]; then
-            # Check that it is NOT mounted
-            if ! findmnt -n -o SOURCE | grep -q "$MAPPER"; then
-                LVMS_PART="$dev"
-                echo "LVMS partition found: $LVMS_PART (mapper: $MAPPER)"
-                break
-            else
-                echo "Skipping $MAPPER - mounted"
-            fi
-        else
-            echo "Skipping $MAPPER - swap"
-        fi
-    fi
-done
-if [ -z "$LVMS_PART" ]; then
-    echo "WARNING: LVMS partition not detected yet"
-fi
-
-# Bind all LUKS partitions to TPM2 using systemd-cryptenroll
-echo "Enrolling LUKS partitions to TPM2 using systemd-cryptenroll..."
+echo "Detecting LUKS partitions..."
 LUKS_DEVS=$(blkid -t TYPE="crypto_LUKS" -o device | sort -u)
-echo "LUKS partitions: $LUKS_DEVS"
+echo "Found: $LUKS_DEVS"
+
+# Temporary keyfile for non-interactive unlock
+echo -n "$PASSPHRASE" > /tmp/key
+chmod 600 /tmp/key
 
 for dev in $LUKS_DEVS; do
-  echo "Enrolling $dev to TPM2..."
-  
-  # Enroll the device with TPM2, binding to PCR 7 (secure boot policy)
-  # You can adjust PCRs as needed for your security policy
+  echo "Enrolling $dev into TPM2..."
   if [ -e /dev/tpmrm0 ]; then
-    timeout 30s bash -c "echo -n '$PASSPHRASE' | systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 '$dev'"
-    RC=$?
-    if [ $RC -eq 0 ]; then
-        echo "Success: $dev enrolled with TPM2"
-    elif [ $RC -eq 124 ]; then
-        echo "Timeout enrolling $dev (no TPM response)"
-    else
-        echo "systemd-cryptenroll failed ($RC)"
-    fi
+    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 \
+      --unlock-key-file=/tmp/key "$dev" && echo "TPM2 enrollment OK for $dev" || echo "TPM2 enrollment failed for $dev"
   else
-    echo "TPM2 device not present, skipping enrollment"
-  fi  
+    echo "TPM2 device not found — skipping $dev"
+  fi
 
-  if [ $? -eq 0 ]; then
-    echo "Success: $dev enrolled with TPM2"
-    
-    if [ "$LVMS_PART" = "$dev" ]; then
-        echo "LVMS partition: $LVMS_PART"
-        UUID=$(blkid -s UUID -o value "$dev")
-        MAPPER="/dev/mapper/luks-$UUID"
-        
-        # Verify it is an encrypted partition
-        if blkid -t TYPE="crypto_LUKS" -o device | grep -q "$LVMS_PART"; then
-            echo "Using existing mapper: $MAPPER"
-            
-            # Ensure udev has created the device nodes
-            udevadm settle
-            
-            # Clean any existing PV signatures if present
-            wipefs -a "$MAPPER" 2>/dev/null || true
-            
-            echo "Creating microshift VG"
+  # Optionally remove old password key
+  if [ -z "$KEEP_PASSPHRASE" ]; then
+    echo "Removing passphrase keyslot from $dev"
+    cryptsetup luksRemoveKey "$dev" --key-file=/tmp/key || true
+  fi
+done
+
+rm -f /tmp/key
+
+# Ensure crypttab has TPM2 auto-unlock
+> /etc/crypttab
+for part in $(lsblk -rno NAME,FSTYPE | awk '$2=="crypto_LUKS"{print $1}'); do
+  uuid=$(blkid -s UUID -o value /dev/$part)
+  echo "luks-$uuid UUID=$uuid none tpm2-device=auto,discard" >> /etc/crypttab
+done
+
+# Rebuild initramfs to include TPM2 metadata
+echo "Regenerating initramfs..."
+dracut -f --regenerate-all
+
+# Optionally detect LVMS partition and set up microshift VG
+echo "Setting up LVMS volume group..."
+LVMS_PART=""
+SWAP_UUID=$(lsblk -f -n | grep 'SWAP' | grep 'luks-' | awk '{print $2}' | awk -F'luks-' '{print $2}')
+for dev in $LUKS_DEVS; do
+    UUID=$(blkid -s UUID -o value "$dev")
+    MAPPER="/dev/mapper/luks-$UUID"
+    if [ -e "$MAPPER" ] && [ "$UUID" != "$SWAP_UUID" ]; then
+        if ! findmnt -n -o SOURCE | grep -q "$MAPPER"; then
+            LVMS_PART="$dev"
+            echo "LVMS partition found: $LVMS_PART"
             pvcreate -ff -y "$MAPPER"
             vgcreate microshift "$MAPPER"
             vgchange -ay microshift
-            echo "LVMS VG created"
-            
+            mkdir -p /etc/microshift
             cat > /etc/microshift/lvms.yaml << 'EOF'
 socket-name: /run/lvm/lvmpolld.socket
 device-classes:
@@ -135,37 +99,10 @@ device-classes:
     spare-gb: 0
     default: true
 EOF
-        else
-            echo "ERROR: Not LUKS partition"
+            break
         fi
-    elif [ -z "$LVMS_PART" ]; then
-        LVMS_PART="not_found"
-        echo "ERROR: LVMS partition not found"
     fi
-    
-    # Remove the passphrase if KEEP_PASSPHRASE is not set
-    if [ -z "$KEEP_PASSPHRASE" ]; then
-      echo "Removing passphrase from $dev"
-      echo -n "$PASSPHRASE" | cryptsetup luksRemoveKey "$dev"
-    fi
-  else
-    echo "ERROR: Failed to enroll $dev with TPM2"
-  fi
 done
-
-# Update crypttab to use TPM2 automatic unlocking
-for part in $(lsblk -rno NAME,FSTYPE | awk '$2=="crypto_LUKS"{print $1}'); do
-  uuid=$(blkid -s UUID -o value /dev/$part)
-  name="luks-$uuid"
-  if ! grep -q "$uuid" /etc/crypttab; then
-    # Add entry with tpm2-device=auto for systemd-cryptsetup
-    echo "$name UUID=$uuid none tpm2-device=auto,discard" >> /etc/crypttab
-  fi
-done
-
-# Regenerate initramfs to include systemd-cryptenroll support
-echo "Regenerating initramfs..."
-dracut -f --regenerate-all
 
 %end
 reboot --eject
