@@ -1,0 +1,6 @@
+[Unit]
+Description=Log Certmonger Renewal Events
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash -c 'logger "Certmonger: certificate store changed; current status: $(getcert list)"'

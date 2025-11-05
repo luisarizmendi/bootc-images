@@ -1,0 +1,13 @@
+[Unit]
+Description=Initial 802.1X Certificate Enrollment
+After=network-online.target certmonger.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/setup-8021x-cert.sh
+RemainAfterExit=yes
+ConditionPathExists=!/var/lib/setup-8021x-cert.done
+
+[Install]
+WantedBy=multi-user.target

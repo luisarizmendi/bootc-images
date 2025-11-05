@@ -29,12 +29,20 @@ RUN dnf config-manager \
         --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
         --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms
 
-# Install packages with systemd-cryptenroll instead of Clevis
-RUN dnf install -y firewalld microshift microshift-cert-manager microshift-olm dialog \
+RUN dnf install -y firewalld microshift microshift-cert-manager microshift-olm dialog certmonger NetworkManager-wifi wpa_supplicant \
     systemd cryptsetup tpm2-tools tpm2-tss pciutils \
     systemd-udev dracut && \
     systemctl enable microshift && \
+    systemctl enable certmonger.service && \
     dnf clean all
+
+COPY files/ /
+
+RUN chmod +x /usr/local/sbin/* && \
+    ln -s /usr/lib/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
+    ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service && \
+    ln -s /usr/lib/systemd/system/microshift-make-rshared.service /etc/systemd/system/multi-user.target.wants/microshift-make-rshared.service
+
 
 RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
     firewall-offline-cmd --zone=trusted --add-source=169.254.169.1 && \
@@ -44,16 +52,11 @@ RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
     firewall-offline-cmd --zone=public --add-port=6443/tcp && \
     firewall-offline-cmd --zone=public --add-port=30000-32767/tcp
 
-# Copy files into the image
-COPY files/ /
-
-RUN chmod +x /usr/local/sbin/* && \
-    ln -s /usr/lib/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
-    ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service && \
-    ln -s /usr/lib/systemd/system/microshift-make-rshared.service /etc/systemd/system/multi-user.target.wants/microshift-make-rshared.service
+# Certmonger restart
+RUN mkdir -p /etc/systemd/system/certmonger.service.d && \
+    echo -e "[Service]\nRestart=on-failure\nRestartSec=10s" > /etc/systemd/system/certmonger.service.d/restart.conf
 
 # Generate new initramfs.img with systemd-cryptenroll support
-# Note: 'systemd' module includes systemd-cryptsetup functionality automatically
 RUN set -xe; \
     kver=$(ls /usr/lib/modules | sort -Vr | head -n1); \
     dracut --force --add "crypt systemd tpm2-tss" \
