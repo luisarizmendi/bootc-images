@@ -6,7 +6,7 @@ platforms: linux/amd64
 ##### INSTALLABLE ARTIFACTS
 # Valid values: true, false, auto
 # Note auto creates an instalable artifact if it does not exist any
-#artifacts: true
+artifacts: true
 
 # Valid values: anaconda-iso, qcow2, vmdk, raw, ami, vhd, gce
 #artifact_formats: qcow2

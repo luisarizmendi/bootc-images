@@ -1,14 +1,17 @@
+
 ARG BASE_IMAGE_TAG='9.6'
 ########################################
 
 FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
 
 RUN dnf install -y \
-    ipa-client \
+    ipa-server \
+    ipa-server-dns \
+    bind \
+    bind-dyndb-ldap \
     certmonger \
     NetworkManager \
-    NetworkManager-wifi \
-    wpa_supplicant \
+    firewalld \
     && dnf clean all
 
 COPY files/ /
@@ -18,6 +21,6 @@ RUN mkdir -p /etc/pki/tls/private /etc/pki/tls/certs && \
     chmod 700 /etc/pki/tls/private
 
 RUN chmod +x /usr/local/sbin/* && \
-    chmod +x /etc/NetworkManager/dispatcher.d/99-802.1x-cert && \
     systemctl enable certmonger && \
-    ln -s /usr/lib/systemd/system/idm-enroll.service/etc/systemd/system/multi-user.target.wants/idm-enroll.service
+    systemctl enable firewalld && \
+    systemctl enable idm-server-install.service

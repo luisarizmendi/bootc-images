@@ -1,15 +1,17 @@
 [Unit]
-Description=IdM Client Enrollment
-After=network-online.target
+Description=IdM Server Installation
+After=network-online.target firewalld.service
 Wants=network-online.target
 ConditionPathExists=!/etc/ipa/default.conf
+Before=certmonger.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/idm-enroll.sh
+ExecStart=/usr/local/sbin/idm-server-install.sh
 RemainAfterExit=yes
 StandardOutput=journal
 StandardError=journal
+TimeoutStartSec=1800
 
 [Install]
 WantedBy=multi-user.target
