@@ -43,6 +43,8 @@ RUN chmod +x /usr/local/sbin/* && \
     ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service && \
     ln -s /usr/lib/systemd/system/microshift-make-rshared.service /etc/systemd/system/multi-user.target.wants/microshift-make-rshared.service
 
+RUN chmod 600 /etc/pki/tls/bootstrap/8021x-bootstrap.key && \
+    update-ca-trust extract
 
 RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
     firewall-offline-cmd --zone=trusted --add-source=169.254.169.1 && \

@@ -1,0 +1,11 @@
+[802-1x]
+eap=tls;
+identity=bootstrap-client
+ca-cert=/etc/pki/ca-trust/source/anchors/ca.crt
+client-cert=/etc/pki/tls/bootstrap/8021x-bootstrap.pem
+private-key=/etc/pki/tls/bootstrap/8021x-bootstrap.key
+private-key-password-flags=0
+
+[connection]
+type=ethernet
+autoconnect=true
