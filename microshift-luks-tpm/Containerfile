@@ -29,7 +29,7 @@ RUN dnf config-manager \
         --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
         --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms
 
-RUN dnf install -y firewalld microshift microshift-cert-manager microshift-olm dialog certmonger NetworkManager-wifi wpa_supplicant \
+RUN dnf install -y firewalld microshift microshift-cert-manager microshift-olm dialog certmonger \
     systemd cryptsetup tpm2-tools tpm2-tss pciutils \
     systemd-udev dracut && \
     systemctl enable microshift && \

@@ -14,8 +14,6 @@ IPA_DS_PASSWORD="${IPA_DS_PASSWORD}"
 IPA_ADMIN_PASSWORD="${IPA_ADMIN_PASSWORD}"
 IPA_HOSTNAME="${IPA_HOSTNAME:-$(hostname -f)}"
 IPA_IP="${IPA_IP:-$(hostname -I | awk '{print $1}')}"
-
-# DNS configuration
 DNS_FORWARDER="${DNS_FORWARDER:-8.8.8.8}"
 SETUP_DNS="${SETUP_DNS:-yes}"
 
@@ -24,6 +22,32 @@ if [ -z "$IPA_DS_PASSWORD" ] || [ -z "$IPA_ADMIN_PASSWORD" ]; then
     echo "ERROR: IPA_DS_PASSWORD and IPA_ADMIN_PASSWORD must be set"
     exit 1
 fi
+
+# Pre-flight checks
+echo "Running pre-flight checks..."
+
+# Check memory
+total_mem=$(free -m | awk '/^Mem:/{print $2}')
+if [ "$total_mem" -lt 2000 ]; then
+    echo "WARNING: Less than 2GB RAM available. IdM may fail to install."
+fi
+
+# Ensure cleanup of previous failed attempts
+if [ -d "/var/lib/dirsrv/slapd-BOOTC-EXAMPLE-COM" ]; then
+    echo "Cleaning up previous installation attempt..."
+    ipa-server-install --uninstall -U || true
+    sleep 5
+fi
+
+# Check SELinux status
+if [ "$(getenforce)" = "Enforcing" ]; then
+    echo "SELinux is enforcing. If installation fails, check for denials."
+fi
+
+echo "Fixing SELinux contexts for /var/lib/ipa and /var/lib/pki..."
+semanage fcontext -a -t ipa_var_lib_t "/var/lib/ipa(/.*)?" || true
+semanage fcontext -a -t pki_tomcat_var_lib_t "/var/lib/pki(/.*)?" || true
+restorecon -Rv /var/lib/ipa /var/lib/pki || true
 
 # Ensure hostname is properly set
 if [ -n "$IPA_HOSTNAME" ]; then
@@ -45,7 +69,7 @@ echo "IP: $IPA_IP"
 echo "DNS Setup: $SETUP_DNS"
 echo "==========================================="
 
-# Install IdM server with DNS and self-signed certificates
+# Install IdM server (unattended)
 if [ "$SETUP_DNS" = "yes" ]; then
     ipa-server-install \
         --realm="$IPA_REALM" \
@@ -73,31 +97,71 @@ else
         --unattended
 fi
 
-# Configure firewall for IdM services
-echo "Configuring firewall..."
-firewall-cmd --permanent --add-service=freeipa-ldap
-firewall-cmd --permanent --add-service=freeipa-ldaps
-firewall-cmd --permanent --add-service=freeipa-replication
-firewall-cmd --permanent --add-service=dns
-firewall-cmd --permanent --add-service=ntp
-firewall-cmd --permanent --add-service=http
-firewall-cmd --permanent --add-service=https
-firewall-cmd --reload
+echo "Waiting for Dogtag CA to be ready..."
+until curl -sk https://$IPA_HOSTNAME:8443/ca/admin/ca/getStatus | grep -q "running"; do
+    echo "  CA not ready yet, retrying in 5s..."
+    sleep 5
+done
+echo "CA subsystem is running."
 
-echo "IdM server installation completed successfully"
-
-# Trigger 802.1x profile creation
-if [ -x /usr/local/sbin/create-802.1x-profile.sh ]; then
-    /usr/local/sbin/create-802.1x-profile.sh
+# --- Fix CA certificate if missing ---
+if [ ! -f /etc/ipa/ca.crt ]; then
+    echo "Recreating /etc/ipa/ca.crt..."
+    if [ -f /etc/pki/pki-tomcat/alias/pwdfile.txt ]; then
+        pk12util -o /root/cacert.p12 \
+            -n "caSigningCert cert-pki-ca" \
+            -d /etc/pki/pki-tomcat/alias \
+            -k /etc/pki/pki-tomcat/alias/pwdfile.txt \
+            -W "" || echo "WARNING: pk12util failed."
+        openssl pkcs12 -in /root/cacert.p12 \
+            -clcerts -nokeys \
+            -out /etc/ipa/ca.crt \
+            -passin pass:
+        chmod 644 /etc/ipa/ca.crt
+        chown root:root /etc/ipa/ca.crt
+        echo "/etc/ipa/ca.crt recreated successfully."
+    else
+        echo "WARNING: /etc/pki/pki-tomcat/alias/pwdfile.txt missing — cannot rebuild ca.crt automatically."
+    fi
+else
+    echo "/etc/ipa/ca.crt already present."
 fi
 
+# --- Firewall setup ---
+echo "Configuring firewall..."
+firewall-cmd --permanent --add-service=freeipa-ldap || true
+firewall-cmd --permanent --add-service=freeipa-ldaps || true
+firewall-cmd --permanent --add-service=freeipa-replication || true
+firewall-cmd --permanent --add-service=dns || true
+firewall-cmd --permanent --add-service=ntp || true
+firewall-cmd --permanent --add-service=http || true
+firewall-cmd --permanent --add-service=https || true
+firewall-cmd --permanent --add-port=88/tcp || true
+firewall-cmd --permanent --add-port=88/udp || true
+firewall-cmd --permanent --add-port=464/tcp || true
+firewall-cmd --permanent --add-port=464/udp || true
+firewall-cmd --reload || true
 
+# --- Restart and check IPA service ---
+echo "Restarting IPA services..."
 if systemctl list-unit-files | grep -q '^ipa\.service'; then
-    echo "Enabling and starting ipa.service..."
     systemctl enable ipa.service
-    systemctl start ipa.service
+    systemctl restart ipa.service || true
 else
     echo "ipa.service not found — skipping enable/start."
+fi
+
+# --- Validate installation ---
+if ipactl status >/dev/null 2>&1; then
+    echo "IPA installation verified successfully."
+else
+    echo "WARNING: ipa-server-install may have failed to complete."
+    echo "Check /var/log/ipaserver-install.log for details."
+fi
+
+# Optional: Trigger extra postinstall actions
+if [ -x /usr/local/sbin/create-802.1x-profile.sh ]; then
+    /usr/local/sbin/create-802.1x-profile.sh
 fi
 
 exit 0
