@@ -8,8 +8,8 @@ if [ -f /etc/ipa/default.conf ]; then
 fi
 
 # Use environment variables from systemd (set in credentials.conf)
-IPA_REALM="${IPA_REALM:-EXAMPLE.COM}"
-IPA_DOMAIN="${IPA_DOMAIN:-example.com}"
+IPA_REALM="${IPA_REALM:-BOOTCEXAMPLE.COM}"
+IPA_DOMAIN="${IPA_DOMAIN:-bootcexample.com}"
 IPA_DS_PASSWORD="${IPA_DS_PASSWORD}"
 IPA_ADMIN_PASSWORD="${IPA_ADMIN_PASSWORD}"
 IPA_HOSTNAME="${IPA_HOSTNAME:-$(hostname -f)}"
@@ -89,6 +89,15 @@ echo "IdM server installation completed successfully"
 # Trigger 802.1x profile creation
 if [ -x /usr/local/sbin/create-802.1x-profile.sh ]; then
     /usr/local/sbin/create-802.1x-profile.sh
+fi
+
+
+if systemctl list-unit-files | grep -q '^ipa\.service'; then
+    echo "Enabling and starting ipa.service..."
+    systemctl enable ipa.service
+    systemctl start ipa.service
+else
+    echo "ipa.service not found — skipping enable/start."
 fi
 
 exit 0

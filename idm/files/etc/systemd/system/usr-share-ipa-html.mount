@@ -1,0 +1,13 @@
+# /etc/systemd/system/usr-share-ipa-html.mount
+[Unit]
+Description=Writable mount for FreeIPA HTML directory
+Before=ipa-server-install.service
+
+[Mount]
+What=/var/lib/ipa/html
+Where=/usr/share/ipa/html
+Type=none
+Options=bind
+
+[Install]
+WantedBy=multi-user.target
