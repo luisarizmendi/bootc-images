@@ -1,12 +1,6 @@
 #!/bin/bash
 set -e
 
-# Check if already installed
-if [ -f /etc/ipa/default.conf ]; then
-    echo "IdM server already installed"
-    exit 0
-fi
-
 # Use environment variables from systemd (set in credentials.conf)
 IPA_REALM="${IPA_REALM:-BOOTCEXAMPLE.COM}"
 IPA_DOMAIN="${IPA_DOMAIN:-bootcexample.com}"
@@ -53,6 +47,15 @@ fi
 if ! grep -q "$IPA_HOSTNAME" /etc/hosts; then
     echo "$IPA_IP $IPA_HOSTNAME $(hostname -s)" >> /etc/hosts
 fi
+
+
+# Fix certmonger problems
+systemctl stop certmonger
+rm -f /run/certmonger.pid
+systemctl restart dbus
+systemctl start certmonger
+sleep 10
+
 
 echo "==========================================="
 echo "Installing IdM Server"

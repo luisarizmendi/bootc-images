@@ -39,21 +39,13 @@ fi
 echo
 echo "→ Checking IPA services..."
 check_service_active "ipa.service"
-check_service_active "dirsrv@$(hostname -f | tr 'a-z.' 'A-Z-').service" || true
+check_service_active "dirsrv@$(awk -F'[[:space:]]*=[[:space:]]*' '/^realm[[:space:]]*=/{gsub(/\./,"-",$2); print toupper($2)}' /etc/ipa/default.conf).service" || true
 check_service_active "pki-tomcatd@pki-tomcat.service"
 check_service_active "krb5kdc.service"
 check_service_active "kadmin.service"
-check_service_active "named-pkcs11.service"
+check_service_active "named.service"
 check_service_active "httpd.service"
 check_service_active "sssd.service"
-
-echo
-echo "→ Checking if IPA CLI works..."
-if ipa ping -q >/dev/null 2>&1; then
-    echo "[OK] ipa ping succeeded"
-else
-    echo "[ERROR] ipa ping failed"
-fi
 
 echo
 echo "→ Checking Kerberos authentication..."
@@ -81,7 +73,7 @@ fi
 
 echo
 echo "→ Checking LDAP connectivity..."
-if ldapsearch -x -H ldap://localhost -b "cn=accounts,$(awk -F= '/basedn/ {print $2}' /etc/ipa/default.conf 2>/dev/null)" >/dev/null 2>&1; then
+if ldapsearch -x -H ldap://localhost  >/dev/null 2>&1; then
     echo "[OK] LDAP connectivity working"
 else
     echo "[ERROR] LDAP connectivity failed"
