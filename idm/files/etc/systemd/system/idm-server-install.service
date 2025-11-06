@@ -1,7 +1,7 @@
 [Unit]
 Description=IdM Server Installation
-After=network-online.target firewalld.service usr-share-ipa-html.mount
-Wants=network-online.target firewalld.service usr-share-ipa-html.mount
+After=network-online.target
+Wants=network-online.target
 ConditionPathExists=!/etc/ipa/default.conf
 Before=certmonger.service
 
@@ -12,8 +12,6 @@ RemainAfterExit=yes
 StandardOutput=journal
 StandardError=journal
 TimeoutStartSec=1800
-Restart=on-failure
-RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
