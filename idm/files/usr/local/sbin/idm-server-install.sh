@@ -39,15 +39,10 @@ if [ -d "/var/lib/dirsrv/slapd-BOOTC-EXAMPLE-COM" ]; then
     sleep 5
 fi
 
-# Check SELinux status
-if [ "$(getenforce)" = "Enforcing" ]; then
-    echo "SELinux is enforcing. If installation fails, check for denials."
-fi
-
-echo "Fixing SELinux contexts for /var/lib/ipa and /var/lib/pki..."
-semanage fcontext -a -t ipa_var_lib_t "/var/lib/ipa(/.*)?" || true
-semanage fcontext -a -t pki_tomcat_var_lib_t "/var/lib/pki(/.*)?" || true
-restorecon -Rv /var/lib/ipa /var/lib/pki || true
+# Set proper SELinux contexts for IPA directories
+semanage fcontext -a -t cert_t "/var/lib/ipa(/.*)?"
+semanage fcontext -a -t cert_t "/var/lib/ipa/ra-agent.key"
+restorecon -Rv /var/lib/ipa
 
 # Ensure hostname is properly set
 if [ -n "$IPA_HOSTNAME" ]; then
@@ -157,11 +152,6 @@ if ipactl status >/dev/null 2>&1; then
 else
     echo "WARNING: ipa-server-install may have failed to complete."
     echo "Check /var/log/ipaserver-install.log for details."
-fi
-
-# Optional: Trigger extra postinstall actions
-if [ -x /usr/local/sbin/create-802.1x-profile.sh ]; then
-    /usr/local/sbin/create-802.1x-profile.sh
 fi
 
 exit 0
