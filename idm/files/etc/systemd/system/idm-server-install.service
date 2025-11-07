@@ -2,8 +2,8 @@
 Description=IdM Server Installation
 After=network-online.target firewalld.service usr-share-ipa-html.mount
 Wants=network-online.target firewalld.service usr-share-ipa-html.mount
+Before=sssd.service ipa.service
 ConditionPathExists=!/etc/ipa/default.conf
-Before=certmonger.service
 
 [Service]
 Type=oneshot
