@@ -1,6 +1,6 @@
 [Unit]
 Description=IdM Server Installation
-After=network-online.target firewalld.service usr-share-ipa-html.mount
+After=multi-user.target
 Wants=network-online.target firewalld.service usr-share-ipa-html.mount
 Before=sssd.service ipa.service
 ConditionPathExists=!/etc/ipa/default.conf
