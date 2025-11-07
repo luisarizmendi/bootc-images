@@ -1,7 +1,7 @@
 [Unit]
 Description=IdM Server Installation
-After=network-online.target
-Wants=network-online.target
+After=network-online.target firewalld.service usr-share-ipa-html.mount
+Wants=network-online.target firewalld.service usr-share-ipa-html.mount
 ConditionPathExists=!/etc/ipa/default.conf
 Before=certmonger.service
 
