@@ -50,10 +50,7 @@ fi
 
 
 # Fix certmonger problems
-systemctl stop certmonger
-rm -f /run/certmonger.pid
-systemctl restart dbus
-systemctl start certmonger
+systemctl restart certmonger
 sleep 10
 
 
@@ -127,6 +124,7 @@ fi
 
 # --- Firewall setup ---
 echo "Configuring firewall..."
+systemctl restart firewalld
 firewall-cmd --permanent --add-service=freeipa-ldap || true
 firewall-cmd --permanent --add-service=freeipa-ldaps || true
 firewall-cmd --permanent --add-service=freeipa-replication || true
