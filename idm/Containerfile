@@ -26,5 +26,4 @@ RUN mkdir -p /var/lib/ipa/html /usr/share/ipa/html
 RUN chmod +x /usr/local/sbin/* && \
     systemctl enable certmonger && \
     systemctl enable firewalld && \
-    systemctl enable idm-server-install.service && \
     systemctl enable usr-share-ipa-html.mount
