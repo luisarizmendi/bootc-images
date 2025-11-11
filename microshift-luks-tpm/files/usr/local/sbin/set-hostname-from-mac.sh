@@ -25,7 +25,7 @@ else
 fi
 
 # Get MAC address and normalize
-MAC_ADDRESS=$(ip link show "$INTERFACE" | awk '/ether/ {print $2}' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+MAC_ADDRESS=$(ip link show "$INTERFACE" | awk '/ether/ {print $2}' | tr -d ':' | tr '[:upper:]' '[:lower:]')
 if [ -z "$MAC_ADDRESS" ]; then
     log_message "ERROR: Could not retrieve MAC address for $INTERFACE"
     exit 1

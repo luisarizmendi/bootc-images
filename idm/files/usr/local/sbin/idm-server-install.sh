@@ -6,6 +6,8 @@ IPA_REALM="${IPA_REALM:-BOOTCEXAMPLE.COM}"
 IPA_DOMAIN="${IPA_DOMAIN:-bootcexample.com}"
 IPA_DS_PASSWORD="${IPA_DS_PASSWORD}"
 IPA_ADMIN_PASSWORD="${IPA_ADMIN_PASSWORD}"
+ENROLL_USERNAME="${ENROLL_USERNAME}"
+ENROLL_PASSWORD="${ENROLL_PASSWORD}"
 IPA_HOSTNAME="${IPA_HOSTNAME:-$(hostname -f)}"
 IPA_IP="${IPA_IP:-$(hostname -I | awk '{print $1}')}"
 DNS_FORWARDER="${DNS_FORWARDER:-8.8.8.8}"
@@ -154,5 +156,122 @@ else
     echo "WARNING: ipa-server-install may have failed to complete."
     echo "Check /var/log/ipaserver-install.log for details."
 fi
+
+
+
+
+
+
+
+echo "=========================================="
+echo "IPA Enrollment User Setup"
+echo "=========================================="
+echo ""
+
+# Check if IPA is installed
+if ! command -v ipa &>/dev/null; then
+    echo "[✖] ERROR: IPA command not found. Is this an IPA server?"
+    exit 1
+fi
+
+# Get admin credentials
+if ! klist &>/dev/null 2>&1; then
+    echo "[+] Authenticating as admin..."
+    
+    if [ -n "$IPA_ADMIN_PASSWORD" ]; then
+        echo "$IPA_ADMIN_PASSWORD" | kinit admin
+    else
+        echo "Please enter the IPA admin password:"
+        kinit admin
+    fi
+    
+    if ! klist &>/dev/null 2>&1; then
+        echo "[✖] Failed to obtain Kerberos credentials"
+        exit 1
+    fi
+    echo "[✔] Authenticated successfully"
+else
+    echo "[=] Already authenticated"
+    klist | head -n 3
+fi
+
+echo ""
+
+# Check if enrollment user already exists
+if ipa user-show "$ENROLL_USERNAME" &>/dev/null; then
+    echo "[!] User '$ENROLL_USERNAME' already exists"
+    read -p "Do you want to reset the password? (y/N): " -r
+    echo
+    
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "[+] Resetting password for $ENROLL_USERNAME..."
+        echo "$ENROLL_PASSWORD" | ipa user-mod "$ENROLL_USERNAME" --password
+        echo "[✔] Password reset"
+    else
+        echo "[=] Keeping existing user"
+    fi
+else
+    # Create enrollment user
+    echo "[+] Creating enrollment user: $ENROLL_USERNAME"
+    
+    # Use expect-style input or printf for password
+    printf "%s\n%s\n" "$ENROLL_PASSWORD" "$ENROLL_PASSWORD" | \
+        ipa user-add "$ENROLL_USERNAME" \
+        --first=Enrollment \
+        --last=User \
+        --password
+    
+    if [ $? -eq 0 ]; then
+        echo "[✔] Enrollment user created successfully"
+    else
+        echo "[✖] Failed to create enrollment user"
+        exit 1
+    fi
+fi
+
+echo ""
+
+# Grant enrollment permissions
+echo "[+] Granting 'Enrollment Administrator' role..."
+
+if ipa role-add-member "Enrollment Administrator" --users="$ENROLL_USERNAME" 2>&1 | grep -q "member.*already a member"; then
+    echo "[=] User already has Enrollment Administrator role"
+elif ipa role-show "Enrollment Administrator" --users 2>&1 | grep -q "$ENROLL_USERNAME"; then
+    echo "[=] User already has Enrollment Administrator role"
+else
+    ipa role-add-member "Enrollment Administrator" --users="$ENROLL_USERNAME"
+    echo "[✔] Role granted successfully"
+fi
+
+echo ""
+
+
+
+# Verify setup
+echo "[+] Verifying enrollment user configuration..."
+echo ""
+ipa user-show "$ENROLL_USERNAME"
+
+echo ""
+echo "=========================================="
+echo "[✔] Setup Complete!"
+echo "=========================================="
+echo ""
+echo "Enrollment user details:"
+echo "  Username: $ENROLL_USERNAME"
+echo "  Password: $ENROLL_PASSWORD"
+echo "  Role: Enrollment Administrator"
+echo ""
+echo "Use on clients with these environment variables:"
+echo ""
+echo "  Environment=\"IPA_ENROLL_PRINCIPAL=$ENROLL_USERNAME\""
+echo "  Environment=\"IPA_ENROLL_PASSWORD=$ENROLL_PASSWORD\""
+echo ""
+echo "⚠️  SECURITY NOTE:"
+echo "  - Store this password securely"
+echo "  - Consider using a keytab for production"
+echo "  - Rotate password regularly"
+echo ""
+
 
 exit 0

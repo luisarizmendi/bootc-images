@@ -7,6 +7,7 @@ FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
 RUN dnf install -y \
     ipa-server \
     ipa-server-dns \
+    ipa-server-trust-ad \
     bind \
     bind-dyndb-ldap \
     certmonger \

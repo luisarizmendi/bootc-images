@@ -1,13 +1,24 @@
 [Unit]
-Description=Initial 802.1X Certificate Enrollment
-After=network-online.target certmonger.service
+Description=Setup 802.1X Certificate with IdM Integration
+Documentation=man:ipa-client-install(1) man:getcert(1)
+After=network-online.target NetworkManager.service
 Wants=network-online.target
+ConditionPathExists=!/var/lib/setup-8021x-cert.done
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/setup-8021x-cert.sh
 RemainAfterExit=yes
-ConditionPathExists=!/var/lib/setup-8021x-cert.done
+EnvironmentFile=/etc/sysconfig/setup-8021x-cert
+ExecStart=/usr/local/bin/setup-8021x-cert.sh
+StandardOutput=journal
+StandardError=journal
+TimeoutSec=600
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=no
+ProtectSystem=strict
+ReadWritePaths=/etc/pki /etc/NetworkManager /var/lib /etc/ipa /var/lib/certmonger
 
 [Install]
 WantedBy=multi-user.target
