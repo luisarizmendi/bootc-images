@@ -32,7 +32,6 @@ RUN dnf config-manager \
 RUN dnf install -y inotify-tools firewalld microshift microshift-cert-manager microshift-olm dialog certmonger ipa-client \
     systemd cryptsetup tpm2-tools tpm2-tss pciutils \
     systemd-udev dracut && \
-    systemctl enable file-monitor.service && \
     systemctl enable microshift && \
     systemctl enable certmonger.service && \
     dnf clean all
@@ -40,6 +39,7 @@ RUN dnf install -y inotify-tools firewalld microshift microshift-cert-manager mi
 COPY files/ /
 
 RUN chmod +x /usr/local/sbin/* && chmod +x /usr/local/bin/* && \
+    ln -s /usr/lib/systemd/system/file-monitor.service /etc/systemd/system/multi-user.target.wants/file-monitor.service && \
     ln -s /usr/lib/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
     ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service && \
     ln -s /usr/lib/systemd/system/microshift-make-rshared.service /etc/systemd/system/multi-user.target.wants/microshift-make-rshared.service
