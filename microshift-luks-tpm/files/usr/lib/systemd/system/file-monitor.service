@@ -1,6 +1,7 @@
 [Unit]
 Description=File System Monitor Service
-After=network.target multi-user.target
+After=local-fs.target
+Requires=local-fs.target
 
 [Service]
 Type=simple
@@ -9,8 +10,6 @@ Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-
-# Environment variables (optional - customize as needed)
 Environment="FILE_MONITOR_CONFIG=/etc/file-monitor/monitor.conf"
 Environment="FILE_MONITOR_LOG=/var/log/file-monitor.log"
 

@@ -34,10 +34,15 @@ After the device boots, you must define the variables required for the IdM insta
 
 ## Notes
 
-- **The IdM installation process may take several minutes.**  
+- Installable artifact (ISO) will create demo user in the device: admin/redhat.
+- The IdM installation process may take several minutes.
 
   When the installation is complete, a marker file is created at:  
 
   ```text
   /var/lib/idm-server-install.done
   ```
+
+
+
+

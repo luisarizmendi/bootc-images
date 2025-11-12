@@ -45,9 +45,21 @@ This image includes:
 
 ## Pre-Build Configuration
 
-You should include your specific Red Hat Edge manager config file under `/etc/flightctl/config.yaml` before build your image in order to get a fully automated onboarding.
+2. **Red Hat Edge Manager config**  
 
-If you don't want to re-build the image you can change the built-it file with the one containing your values after installing the device as a post-boot action. This will trigger automatically the flightctl agent restart thanks to the file monitoring systemd unit.
+    You should include your specific Red Hat Edge manager config file under `/etc/flightctl/config.yaml` before build your image in order to get a fully automated onboarding.
+
+    If you don't want to re-build the image you can change the built-it file with the one containing your values after installing the device as a post-boot action. This will trigger automatically the flightctl agent restart thanks to the file monitoring systemd unit.
+
+
+2. **IDM CA Certificate**  
+   Add your IDM CA certificate to the trusted store:  
+   ```text
+   /etc/pki/ca-trust/source/anchors/ca.crt
+   ```
+
+   You can also do it as a post-boot step since the `/etc/pki/ca-trust/source/anchors/ca.crt` file is being monitored by the `file-monitor` systemd unit.
+
 
 
 ## Post-Boot Configuration
@@ -59,17 +71,10 @@ After the device boots, you must complete the following steps to ensure proper o
    ```text
    /etc/crio/openshift-pull-secret
    ```
-
-2. **IDM CA Certificate**  
-   Add your IDM CA certificate to the trusted store:  
-   ```text
-   /etc/pki/ca-trust/source/anchors/ca.crt
-   ```
-
-3. **DNS Configuration**  
+2. **DNS Configuration**  
    - If your demo environment does not have a DNS entry for the IDM, update `/etc/hosts` to resolve the IDM server.
 
-4. **IDM Variables for 802.1X**  
+3. **IDM Variables for 802.1X**  
    Configure your IDM-specific variables in:  
    ```text
    /etc/sysconfig/setup-8021x-cert
@@ -86,5 +91,6 @@ After the device boots, you must complete the following steps to ensure proper o
 - TPM is mandatory for LUKS key storage.
 - Monitoring actions will only be triggered after the initial post-boot configuration is completed.
 - The system is designed for edge/demo environments and integrates tightly with Red Hat tools.
+- Installable artifact (ISO) will create demo user in the device: admin/redhat.
 
 
