@@ -2,11 +2,11 @@
 Description=IdM Server Installation (post-boot)
 After=multi-user.target
 ConditionPathExists=!/etc/ipa/default.conf
-ConditionPathExists=/etc/sysconfig/idm-server-install.conf
+ConditionPathExists=/etc/sysconfig/idm-server-install
 
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/sysconfig/idm-server-install.conf
+EnvironmentFile=/etc/sysconfig/idm-server-install
 ExecStart=/usr/local/sbin/idm-server-install.sh
 StandardOutput=journal
 StandardError=journal

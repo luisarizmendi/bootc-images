@@ -38,7 +38,7 @@ if [ "$total_mem" -lt 2000 ]; then
 fi
 
 # Ensure cleanup of previous failed attempts
-if [ -d "/var/lib/dirsrv/slapd-BOOTC-EXAMPLE-COM" ]; then
+if [ -d "/var/lib/dirsrv/slapd-${IPA_REALM//./\-}" ]; then
     echo "Cleaning up previous installation attempt..."
     ipa-server-install --uninstall -U || true
     sleep 5
@@ -140,14 +140,13 @@ firewall-cmd --permanent --add-port=464/tcp || true
 firewall-cmd --permanent --add-port=464/udp || true
 firewall-cmd --reload || true
 
+sleep 10
+
 # --- Restart and check IPA service ---
 echo "Restarting IPA services..."
-if systemctl list-unit-files | grep -q '^ipa\.service'; then
-    systemctl enable ipa.service
-    systemctl restart ipa.service || true
-else
-    echo "ipa.service not found — skipping enable/start."
-fi
+systemctl enable ipa.service
+systemctl restart ipa.service || true
+
 
 # --- Validate installation ---
 if ipactl status >/dev/null 2>&1; then
@@ -217,13 +216,42 @@ fi
 
 echo ""
 
-# Grant enrollment permissions
-echo "[+] Granting 'Enrollment Administrator' role..."
-if ipa role-add-member "Enrollment Administrator" --users="$ENROLL_USERNAME" 2>&1 | grep -q "This entry is already a member"; then
-    echo "[=] User already has Enrollment Administrator role"
+# Grant enrollment permissions - FIXED ROLE NAME + ensure privilege
+echo "[+] Ensuring 'Enrollment Administrator' role and privilege..."
+
+ROLE_NAME="Enrollment Administrator"
+
+# Ensure role exists
+if ! ipa role-show "$ROLE_NAME" >/dev/null 2>&1; then
+    echo "[+] Role '$ROLE_NAME' does not exist. Creating it..."
+    ipa role-add "$ROLE_NAME" --desc "Enrollment Administrator responsible for client(host) enrollment"
+fi
+
+# Ensure user is a member of the role
+if ipa role-show "$ROLE_NAME" | grep -q "Member users:.*\b$ENROLL_USERNAME\b"; then
+    echo "[=] User '$ENROLL_USERNAME' is already a member of '$ROLE_NAME'"
 else
-    ipa role-add-member "Enrollment Administrator" --users="$ENROLL_USERNAME"
-    echo "[✓] Role granted successfully"
+    echo "[+] Adding user '$ENROLL_USERNAME' to role '$ROLE_NAME'..."
+    ipa role-add-member "$ROLE_NAME" --users="$ENROLL_USERNAME"
+    echo "[✓] User '$ENROLL_USERNAME' added to role '$ROLE_NAME'"
+fi
+
+# Ensure the role has the Host Enrollment privilege
+if ipa role-show "$ROLE_NAME" | grep -q "Privileges:.*\bHost Enrollment\b"; then
+    echo "[=] Role '$ROLE_NAME' already has privilege 'Host Enrollment'"
+else
+    echo "[+] Adding privilege 'Host Enrollment' to role '$ROLE_NAME'..."
+    ipa role-add-privilege "$ROLE_NAME" --privilege="Host Enrollment"
+    echo "[✓] Privilege 'Host Enrollment' added to role '$ROLE_NAME'"
+fi
+
+# Ensure the role has the Host Administrators privilege
+if ipa role-show "$ROLE_NAME" | grep -q "Privileges:.*\bHost Administrators\b"; then
+    echo "[=] Role '$ROLE_NAME' already has privilege 'Host Administrators'"
+else
+    echo "[+] Adding privilege 'Host Administrators' to role '$ROLE_NAME'..."
+    ipa role-add-privilege "$ROLE_NAME" --privilege="Host Administrators"
+    echo "[✓] Privilege 'Host Administrators' added to role '$ROLE_NAME'"
 fi
 
 echo ""
@@ -231,11 +259,11 @@ echo ""
 # Initialize password (clear "must change" flag)
 echo "[+] Completing password initialization for $ENROLL_USERNAME..."
 
-# Get realm in uppercase
-IPA_REALM="${IPA_DOMAIN^^}"
+# Get realm (should match IPA_REALM variable)
+REALM_UPPER="$IPA_REALM"
 
 # Try to authenticate to ensure password is active
-if echo "${ENROLL_PASSWORD}" | kinit "${ENROLL_USERNAME}@${IPA_REALM}" 2>/dev/null; then
+if echo "${ENROLL_PASSWORD}" | kinit "${ENROLL_USERNAME}@${REALM_UPPER}" 2>/dev/null; then
     echo "[✓] Password initialization complete"
     kdestroy -A 2>/dev/null || true
 else
@@ -245,7 +273,7 @@ else
     if command -v expect &>/dev/null; then
         expect <<EOF
 set timeout 10
-spawn kinit ${ENROLL_USERNAME}@${IPA_REALM}
+spawn kinit ${ENROLL_USERNAME}@${REALM_UPPER}
 expect {
     "Password for" {
         send "${ENROLL_PASSWORD}\r"
@@ -269,13 +297,13 @@ EOF
     else
         echo "[!] 'expect' not available. Trying manual verification..."
         # Manual verification attempt
-        if echo "${ENROLL_PASSWORD}" | kinit "${ENROLL_USERNAME}@${IPA_REALM}" 2>/dev/null; then
+        if echo "${ENROLL_PASSWORD}" | kinit "${ENROLL_USERNAME}@${REALM_UPPER}" 2>/dev/null; then
             echo "[✓] Password now works"
             kdestroy -A 2>/dev/null || true
         else
             echo "[!] Could not automatically initialize password"
             echo "    Please manually run on the IPA server:"
-            echo "    kinit ${ENROLL_USERNAME}@${IPA_REALM}"
+            echo "    kinit ${ENROLL_USERNAME}@${REALM_UPPER}"
             echo "    (Enter password when prompted, may need to change it)"
         fi
     fi
@@ -285,7 +313,7 @@ echo ""
 
 # Final verification
 echo "[+] Testing authentication..."
-if echo "${ENROLL_PASSWORD}" | kinit "${ENROLL_USERNAME}@${IPA_REALM}" 2>/dev/null; then
+if echo "${ENROLL_PASSWORD}" | kinit "${ENROLL_USERNAME}@${REALM_UPPER}" 2>/dev/null; then
     echo "[✓] Enrollment user can authenticate successfully"
     kdestroy -A 2>/dev/null || true
 else
@@ -296,6 +324,7 @@ fi
 echo ""
 
 # Verify setup
+echo "$IPA_ADMIN_PASSWORD" | kinit admin
 echo "[+] Verifying enrollment user configuration..."
 echo ""
 ipa user-show "$ENROLL_USERNAME" 2>/dev/null || echo "[!] Could not retrieve user details"
@@ -308,8 +337,8 @@ echo ""
 echo "Enrollment user details:"
 echo "  Username: $ENROLL_USERNAME"
 echo "  Password: $ENROLL_PASSWORD"
-echo "  Realm: $IPA_REALM"
-echo "  Role: Enrollment Administrator"
+echo "  Realm: $REALM_UPPER"
+echo "  Role: Host Enrollment"
 echo ""
 echo "Use on clients with these environment variables:"
 echo ""
@@ -321,5 +350,8 @@ echo "  - Store this password securely"
 echo "  - Consider using a keytab for production"
 echo "  - Rotate password regularly"
 echo ""
+
+
+touch /var/lib/idm-server-install.done
 
 exit 0

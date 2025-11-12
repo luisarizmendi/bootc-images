@@ -24,10 +24,10 @@ RUN mkdir -p /etc/pki/tls/private /etc/pki/tls/certs && \
 # Ensure a writable path exists for IPA HTML files
 RUN mkdir -p /var/lib/ipa/html /usr/share/ipa/html
 
-RUN chmod +x /usr/local/sbin/* && \
+RUN chmod +x /usr/local/sbin/* && chmod +x /usr/local/bin/* && \
+    ln -s /usr/lib/systemd/system/file-monitor.service /etc/systemd/system/multi-user.target.wants/file-monitor.service && \
     systemctl enable certmonger && \
     systemctl enable firewalld && \
     systemctl enable usr-share-ipa-html.mount && \
     systemctl enable idm-server-install.service
 
-    

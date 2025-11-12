@@ -17,8 +17,6 @@ INTERFACE=
 #IPA_ENROLL_PRINCIPAL=enrolluser
 #IPA_ENROLL_PASSWORD=EnrollDevices123!
 
-
-
 # Method 2: Admin password
 #IPA_ENROLL_PASSWORD=AdminPassword
 

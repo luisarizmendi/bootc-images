@@ -47,6 +47,58 @@ else
     echo "[=] Hostname is already FQDN: $CURRENT_HOSTNAME"
 fi
 
+# === Configure Kerberos before enrollment (needed for principal auth) ===
+if [ ! -f /etc/krb5.conf ] || ! grep -q "$IPA_DOMAIN" /etc/krb5.conf; then
+    echo "[+] Pre-configuring Kerberos client for enrollment..."
+    
+    # Convert domain to uppercase for realm
+    IPA_REALM=$(echo "$IPA_DOMAIN" | tr '[:lower:]' '[:upper:]')
+    
+    cat > /etc/krb5.conf <<EOF
+[libdefaults]
+  default_realm = ${IPA_REALM}
+  dns_lookup_realm = false
+  dns_lookup_kdc = false
+  rdns = false
+  dns_canonicalize_hostname = false
+  ticket_lifetime = 24h
+  forwardable = true
+  udp_preference_limit = 0
+
+[realms]
+  ${IPA_REALM} = {
+    kdc = ${IPA_SERVER}
+    master_kdc = ${IPA_SERVER}
+    admin_server = ${IPA_SERVER}
+    default_domain = ${IPA_DOMAIN}
+  }
+
+[domain_realm]
+  .${IPA_DOMAIN} = ${IPA_REALM}
+  ${IPA_DOMAIN} = ${IPA_REALM}
+EOF
+
+    echo "[✔] Kerberos configuration created for realm ${IPA_REALM}."
+    
+    # Test Kerberos connectivity if using principal auth
+    if [ -n "${IPA_ENROLL_PRINCIPAL:-}" ] && [ -n "${IPA_ENROLL_PASSWORD:-}" ]; then
+        echo "[+] Testing Kerberos authentication..."
+        if echo "$IPA_ENROLL_PASSWORD" | kinit "$IPA_ENROLL_PRINCIPAL" 2>/dev/null; then
+            echo "[✔] Kerberos authentication successful."
+            kdestroy
+        else
+            echo "[!] WARNING: Kerberos authentication test failed."
+            echo "    This may cause enrollment issues. Verify:"
+            echo "    - IPA_ENROLL_PRINCIPAL is correct: $IPA_ENROLL_PRINCIPAL"
+            echo "    - Password is correct"
+            echo "    - Network connectivity to $IPA_SERVER:88 (Kerberos)"
+        fi
+    fi
+else
+    echo "[=] Kerberos already configured."
+fi
+
+
 # === Check if system is already enrolled ===
 if ! grep -q "server" /etc/ipa/default.conf 2>/dev/null; then
     echo "[+] Enrolling system into IdM domain $IPA_DOMAIN..."
@@ -57,6 +109,7 @@ if ! grep -q "server" /etc/ipa/default.conf 2>/dev/null; then
         "--mkhomedir"
         "--domain=$IPA_DOMAIN"
         "--server=$IPA_SERVER"
+        "--force-join"
         "-U"
     )
     
