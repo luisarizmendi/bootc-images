@@ -31,15 +31,36 @@ declare -A WATCH_ACTIONS
 
 parse_config() {
     local line_num=0
+    
+    if [[ ! -r "$CONFIG_FILE" ]]; then
+        log "ERROR: Cannot read configuration file: $CONFIG_FILE"
+        exit 1
+    fi
+    
+    log "DEBUG: Starting config parse"
+    
     while IFS= read -r line || [[ -n "$line" ]]; do
-        ((line_num++))
-        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+        line_num=$((line_num + 1))  # Changed from ((line_num++))
+        
+        log "DEBUG: Read line $line_num: '$line'"
+        
+        # Skip empty lines and comments
+        if [[ -z "$line" ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
+            log "DEBUG: Skipping line $line_num (empty or comment)"
+            continue
+        fi
+        
+        # Trim whitespace
         line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        
+        log "DEBUG: Processing line $line_num: '$line'"
         
         if [[ "$line" =~ ^([^|]+)\|([^|]+)\|(.+)$ ]]; then
             local path="${BASH_REMATCH[1]}"
             local events="${BASH_REMATCH[2]}"
             local action="${BASH_REMATCH[3]}"
+            
+            log "DEBUG: Parsed path='$path' events='$events'"
             
             if [[ ! -e "$path" ]]; then
                 log "WARNING: Path does not exist (line $line_num): $path"
@@ -54,6 +75,8 @@ parse_config() {
             log "WARNING: Invalid configuration line $line_num: $line"
         fi
     done < "$CONFIG_FILE"
+    
+    log "DEBUG: Config parse complete. Found ${#WATCH_PATHS[@]} paths"
 }
 
 build_monitor_list() {
@@ -111,6 +134,15 @@ trap cleanup SIGTERM SIGINT
 
 main() {
     parse_config
+
+parse_config
+
+    # Debug output
+    log "Parsed ${#WATCH_PATHS[@]} paths"
+    for key in "${!WATCH_PATHS[@]}"; do
+        log "  - $key"
+    done
+
     local monitor_paths
     monitor_paths=$(build_monitor_list)
     log "Monitoring ${#WATCH_PATHS[@]} path(s)"

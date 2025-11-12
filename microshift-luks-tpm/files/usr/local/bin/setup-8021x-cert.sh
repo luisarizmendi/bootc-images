@@ -243,7 +243,6 @@ fi
 echo "[+] Reloading NetworkManager..."
 systemctl reload NetworkManager
 
-touch /var/lib/setup-8021x-cert.done
 echo "[✔] 802.1X certificate setup complete."
 
 # Final checks
@@ -272,3 +271,5 @@ else
     echo "❌ Some checks failed. Review output above."
     exit 1
 fi
+
+touch /var/lib/setup-8021x-cert.done

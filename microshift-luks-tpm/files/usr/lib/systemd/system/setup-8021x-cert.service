@@ -8,7 +8,6 @@ ConditionPathExists=/etc/sysconfig/setup-8021x-cert
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
 EnvironmentFile=/etc/sysconfig/setup-8021x-cert
 ExecStart=/usr/local/bin/setup-8021x-cert.sh
 StandardOutput=journal
@@ -16,11 +15,10 @@ StandardError=journal
 TimeoutSec=600
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# Security hardening (relaxed for system configuration)
-PrivateTmp=yes
-NoNewPrivileges=no
-ProtectSystem=no
-ReadWritePaths=/etc/pki /etc/NetworkManager /var/lib /etc/ipa /var/lib/certmonger
+# Retry until successful
+Restart=on-failure
+RestartSec=120
+StartLimitBurst=0
 
 [Install]
 WantedBy=multi-user.target

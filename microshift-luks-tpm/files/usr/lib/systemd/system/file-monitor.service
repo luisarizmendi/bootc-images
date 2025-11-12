@@ -14,9 +14,5 @@ StandardError=journal
 Environment="FILE_MONITOR_CONFIG=/etc/file-monitor/monitor.conf"
 Environment="FILE_MONITOR_LOG=/var/log/file-monitor.log"
 
-# Security hardening
-NoNewPrivileges=true
-PrivateTmp=true
-
 [Install]
 WantedBy=multi-user.target
