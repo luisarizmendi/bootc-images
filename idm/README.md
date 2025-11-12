@@ -28,8 +28,7 @@ After the device boots, you must define the variables required for the IdM insta
 
    ```text
    /etc/sysconfig/idm-server-install
-
-
+  ```
 
 ---
 
