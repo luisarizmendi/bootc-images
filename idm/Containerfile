@@ -4,8 +4,6 @@ ARG BASE_IMAGE_TAG='9.6'
 
 FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
 
-RUN dnf install -y https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/Packages/i/inotify-tools-3.22.1.0-1.el9.x86_64.rpm
-
 RUN dnf install -y \
     ipa-server \
     ipa-server-dns \

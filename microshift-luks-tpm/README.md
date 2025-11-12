@@ -37,7 +37,7 @@ This image includes:
 
 ## Device requirements
 
-- At least 2 cores and 2 GB of memory and 10GB disk, best 4 cores, 4 GB of memory and 50GB disk.
+- At least 2 cores and 2 GB of memory and 20GB disk, best 4 cores, 4 GB of memory and 50GB disk.
 - Requires a TPM on the device.
 
 ---

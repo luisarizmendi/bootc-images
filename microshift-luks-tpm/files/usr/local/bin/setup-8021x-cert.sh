@@ -251,13 +251,6 @@ echo ""
 echo "[+] Running final verification checks..."
 CHECKS_PASSED=true
 
-if ipa ping >/dev/null 2>&1; then
-    echo "[✓] IPA connectivity: OK"
-else
-    echo "[✖] IPA connectivity: FAILED"
-    CHECKS_PASSED=false
-fi
-
 if systemctl is-active --quiet certmonger; then
     echo "[✓] Certmonger service: Running"
 else

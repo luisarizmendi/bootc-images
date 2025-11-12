@@ -14,16 +14,12 @@ ExecStart=/usr/local/bin/setup-8021x-cert.sh
 StandardOutput=journal
 StandardError=journal
 TimeoutSec=600
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# Retry until successful
-Restart=on-failure
-RestartSec=60
-StartLimitBurst=0
-
-# Security hardening
+# Security hardening (relaxed for system configuration)
 PrivateTmp=yes
 NoNewPrivileges=no
-ProtectSystem=strict
+ProtectSystem=no
 ReadWritePaths=/etc/pki /etc/NetworkManager /var/lib /etc/ipa /var/lib/certmonger
 
 [Install]
