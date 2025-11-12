@@ -16,6 +16,7 @@ This image includes:
 
 - **Disk Encryption**  
   The root disk is encrypted with **LUKS**, and encryption keys are securely stored in the **TPM**.  
+
   **IMPORTANT: Requires a TPM** on the device.
 
 - **IDM Integration & Network Setup**  
@@ -30,6 +31,14 @@ This image includes:
 - **File Monitoring Systemd Unit**  
   - Monitors specific paths/files.
   - On changes, triggers actions configured in `/etc/file-monitor/monitor.conf`.
+
+
+---
+
+## Device requirements
+
+- At least 2 cores and 2 GB of memory and 10GB disk, best 4 cores, 4 GB of memory and 50GB disk.
+- Requires a TPM on the device.
 
 ---
 

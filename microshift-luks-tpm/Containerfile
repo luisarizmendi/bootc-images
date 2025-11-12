@@ -64,4 +64,3 @@ RUN set -xe; \
            --install "systemd-cryptenroll cryptsetup" \
            --no-hostonly \
            /usr/lib/modules/$kver/initramfs.img "$kver"
-
