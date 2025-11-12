@@ -5,6 +5,7 @@ ARG BASE_IMAGE_TAG='9.6'
 FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
 
 RUN dnf install -y \
+    inotify-tools \
     ipa-server \
     ipa-server-dns \
     ipa-server-trust-ad \

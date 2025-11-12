@@ -21,7 +21,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     exit 1
 fi
 
-echo $ > "$PID_FILE"
+echo $$ > "$PID_FILE"
 log "Starting file monitor service"
 log "Using configuration: $CONFIG_FILE"
 
