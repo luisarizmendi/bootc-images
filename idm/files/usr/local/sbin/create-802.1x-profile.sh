@@ -4,7 +4,7 @@ set -e
 # Wait for IdM to be fully ready
 sleep 10
 
-# Use environment variable from systemd (set in credentials.conf)
+# Use environment variable from systemd (idm-server-install.conf)
 IPA_ADMIN_PASSWORD="${IPA_ADMIN_PASSWORD}"
 
 if [ -z "$IPA_ADMIN_PASSWORD" ]; then

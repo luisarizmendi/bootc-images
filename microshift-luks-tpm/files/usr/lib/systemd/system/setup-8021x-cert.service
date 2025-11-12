@@ -4,6 +4,7 @@ Documentation=man:ipa-client-install(1) man:getcert(1)
 After=network-online.target NetworkManager.service
 Wants=network-online.target
 ConditionPathExists=!/var/lib/setup-8021x-cert.done
+ConditionPathExists=/etc/sysconfig/setup-8021x-cert
 
 [Service]
 Type=oneshot
@@ -13,6 +14,11 @@ ExecStart=/usr/local/bin/setup-8021x-cert.sh
 StandardOutput=journal
 StandardError=journal
 TimeoutSec=600
+
+# Retry until successful
+Restart=on-failure
+RestartSec=60
+StartLimitBurst=0
 
 # Security hardening
 PrivateTmp=yes

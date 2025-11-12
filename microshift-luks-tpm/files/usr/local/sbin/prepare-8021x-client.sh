@@ -51,43 +51,66 @@ fi
 if ! grep -q "server" /etc/ipa/default.conf 2>/dev/null; then
     echo "[+] Enrolling system into IdM domain $IPA_DOMAIN..."
     
-    # Build enrollment command with authentication
-    ENROLL_CMD="ipa-client-install --mkhomedir --domain=$IPA_DOMAIN --server=$IPA_SERVER -U"
+    # Build enrollment command base
+    ENROLL_ARGS=(
+        "ipa-client-install"
+        "--mkhomedir"
+        "--domain=$IPA_DOMAIN"
+        "--server=$IPA_SERVER"
+        "-U"
+    )
     
     if [ -n "${IPA_ENROLL_OTP:-}" ]; then
         echo "[+] Using One-Time Password for enrollment..."
-        ENROLL_CMD="$ENROLL_CMD --password=$IPA_ENROLL_OTP"
+        ENROLL_ARGS+=("--password=$IPA_ENROLL_OTP")
+        
     elif [ -n "${IPA_ENROLL_KEYTAB:-}" ]; then
         echo "[+] Using keytab file for enrollment..."
-        ENROLL_CMD="$ENROLL_CMD --keytab=$IPA_ENROLL_KEYTAB"
+        ENROLL_ARGS+=("--keytab=$IPA_ENROLL_KEYTAB")
+        
     elif [ -n "${IPA_ENROLL_PRINCIPAL:-}" ] && [ -n "${IPA_ENROLL_PASSWORD:-}" ]; then
         echo "[+] Using principal and password for enrollment..."
-        ENROLL_CMD="$ENROLL_CMD --principal=$IPA_ENROLL_PRINCIPAL --password=$IPA_ENROLL_PASSWORD"
+        ENROLL_ARGS+=("--principal=$IPA_ENROLL_PRINCIPAL" "--password=$IPA_ENROLL_PASSWORD")
+        
     elif [ -n "${IPA_ENROLL_PASSWORD:-}" ]; then
         echo "[+] Using admin password for enrollment..."
-        ENROLL_CMD="$ENROLL_CMD --principal=admin --password=$IPA_ENROLL_PASSWORD"
+        ENROLL_ARGS+=("--principal=admin" "--password=$IPA_ENROLL_PASSWORD")
+        
     else
         echo "[✖] ERROR: No authentication method provided for IPA enrollment."
         echo "    Set one of: IPA_ENROLL_OTP, IPA_ENROLL_KEYTAB, IPA_ENROLL_PASSWORD, or IPA_ENROLL_PRINCIPAL+IPA_ENROLL_PASSWORD"
         exit 1
     fi
     
-    # Execute enrollment
-    if ! eval "$ENROLL_CMD"; then
+    # Debug: show the command being executed (sanitize password)
+    SAFE_ARGS=("${ENROLL_ARGS[@]}")
+    for i in "${!SAFE_ARGS[@]}"; do
+        if [[ "${SAFE_ARGS[$i]}" == --password=* ]]; then
+            SAFE_ARGS[$i]="--password=***REDACTED***"
+        fi
+    done
+    echo "[DEBUG] Executing: ${SAFE_ARGS[*]}"
+    
+    # Execute enrollment using array expansion
+    if ! "${ENROLL_ARGS[@]}"; then
         echo "[✖] IPA client enrollment failed. Check /var/log/ipaclient-install.log"
         echo ""
         echo "Common causes:"
         echo "  - OTP token already used or invalid (generate a new one)"
         echo "  - Wrong password"
+        echo "  - Principal lacks enrollment permissions (check 'Enrollment Administrator' role)"
         echo "  - Host already exists in IPA (delete it first)"
         echo "  - Network connectivity issues to IPA server"
         echo ""
         echo "To troubleshoot:"
         echo "  1. Check the log: cat /var/log/ipaclient-install.log"
         echo "  2. Test connectivity: ping $IPA_SERVER"
-        echo "  3. For OTP: Generate new token on IPA server:"
+        echo "  3. Test authentication: kinit ${IPA_ENROLL_PRINCIPAL:-admin}"
+        echo "  4. For OTP: Generate new token on IPA server:"
         echo "     ipa host-del $(hostname -f) --updatedns  # if host exists"
         echo "     ipa host-add $(hostname -f) --random"
+        echo "  5. Check principal permissions:"
+        echo "     ipa user-show ${IPA_ENROLL_PRINCIPAL:-admin}"
         exit 1
     fi
 else
@@ -203,6 +226,7 @@ done
 
 if [ $timeout -le 0 ]; then
     echo "[!] Timeout waiting for certificate issuance."
+    echo "    Check: getcert list"
     exit 1
 fi
 
@@ -220,13 +244,36 @@ systemctl reload NetworkManager
 touch /var/lib/setup-8021x-cert.done
 echo "[✔] 802.1X certificate setup complete."
 
+# Final checks
+echo ""
+echo "[+] Running final verification checks..."
+CHECKS_PASSED=true
 
-# Checks
-if ipa ping >/dev/null 2>&1 &&
-   systemctl is-active --quiet certmonger &&
-   getcert list | grep -q "status: MONITORING"; then
-    echo "✅ 802.1X + IPA setup successful."
+if ipa ping >/dev/null 2>&1; then
+    echo "[✓] IPA connectivity: OK"
 else
-    echo "❌ Something went wrong. Check logs."
+    echo "[✖] IPA connectivity: FAILED"
+    CHECKS_PASSED=false
 fi
 
+if systemctl is-active --quiet certmonger; then
+    echo "[✓] Certmonger service: Running"
+else
+    echo "[✖] Certmonger service: Not running"
+    CHECKS_PASSED=false
+fi
+
+if getcert list | grep -q "status: MONITORING"; then
+    echo "[✓] Certificate status: Monitoring"
+else
+    echo "[✖] Certificate status: Not monitoring"
+    CHECKS_PASSED=false
+fi
+
+echo ""
+if [ "$CHECKS_PASSED" = true ]; then
+    echo "✅ 802.1X + IPA setup successful."
+else
+    echo "❌ Some checks failed. Review output above."
+    exit 1
+fi

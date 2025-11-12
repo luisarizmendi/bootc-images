@@ -1,23 +1,32 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Use environment variables from systemd (set in credentials.conf)
-IPA_REALM="${IPA_REALM:-BOOTCEXAMPLE.COM}"
-IPA_DOMAIN="${IPA_DOMAIN:-bootcexample.com}"
-IPA_DS_PASSWORD="${IPA_DS_PASSWORD}"
-IPA_ADMIN_PASSWORD="${IPA_ADMIN_PASSWORD}"
-ENROLL_USERNAME="${ENROLL_USERNAME}"
-ENROLL_PASSWORD="${ENROLL_PASSWORD}"
-IPA_HOSTNAME="${IPA_HOSTNAME:-$(hostname -f)}"
-IPA_IP="${IPA_IP:-$(hostname -I | awk '{print $1}')}"
-DNS_FORWARDER="${DNS_FORWARDER:-8.8.8.8}"
-SETUP_DNS="${SETUP_DNS:-yes}"
+# === CONFIGURATION VALIDATION ===
+# These must be set via EnvironmentFile in systemd
+: "${IPA_REALM:?IPA_REALM must be set}"
+: "${IPA_DOMAIN:?IPA_DOMAIN must be set}"
+: "${IPA_HOSTNAME:?IPA_HOSTNAME must be set}"
+: "${IPA_DS_PASSWORD:?IPA_DS_PASSWORD must be set}"
+: "${IPA_ADMIN_PASSWORD:?IPA_ADMIN_PASSWORD must be set}"
+: "${ENROLL_USERNAME:?ENROLL_USERNAME must be set}"
+: "${ENROLL_PASSWORD:?ENROLL_PASSWORD must be set}"
 
-# Validate required variables
-if [ -z "$IPA_DS_PASSWORD" ] || [ -z "$IPA_ADMIN_PASSWORD" ]; then
-    echo "ERROR: IPA_DS_PASSWORD and IPA_ADMIN_PASSWORD must be set"
-    exit 1
-fi
+# Optional variables with defaults
+: "${SETUP_DNS:=yes}"
+: "${DNS_FORWARDER:=8.8.8.8}"
+: "${IPA_IP:=$(hostname -I | awk '{print $1}')}"
+
+echo "==========================================="
+echo "IdM Server Installation"
+echo "==========================================="
+echo "Realm: $IPA_REALM"
+echo "Domain: $IPA_DOMAIN"
+echo "Hostname: $IPA_HOSTNAME"
+echo "IP: $IPA_IP"
+echo "DNS Setup: $SETUP_DNS"
+echo "Enrollment User: $ENROLL_USERNAME"
+echo "==========================================="
+echo ""
 
 # Pre-flight checks
 echo "Running pre-flight checks..."
@@ -36,34 +45,25 @@ if [ -d "/var/lib/dirsrv/slapd-BOOTC-EXAMPLE-COM" ]; then
 fi
 
 # Set proper SELinux contexts for IPA directories
-semanage fcontext -a -t cert_t "/var/lib/ipa(/.*)?"
-semanage fcontext -a -t cert_t "/var/lib/ipa/ra-agent.key"
-restorecon -Rv /var/lib/ipa
+semanage fcontext -a -t cert_t "/var/lib/ipa(/.*)?" 2>/dev/null || true
+semanage fcontext -a -t cert_t "/var/lib/ipa/ra-agent.key" 2>/dev/null || true
+restorecon -Rv /var/lib/ipa 2>/dev/null || true
 
 # Ensure hostname is properly set
-if [ -n "$IPA_HOSTNAME" ]; then
-    hostnamectl set-hostname "$IPA_HOSTNAME"
-fi
+hostnamectl set-hostname "$IPA_HOSTNAME"
 
 # Add hostname to /etc/hosts if not present
 if ! grep -q "$IPA_HOSTNAME" /etc/hosts; then
     echo "$IPA_IP $IPA_HOSTNAME $(hostname -s)" >> /etc/hosts
 fi
 
-
 # Fix certmonger problems
 systemctl restart certmonger
 sleep 10
 
-
+echo ""
 echo "==========================================="
-echo "Installing IdM Server"
-echo "==========================================="
-echo "Realm: $IPA_REALM"
-echo "Domain: $IPA_DOMAIN"
-echo "Hostname: $IPA_HOSTNAME"
-echo "IP: $IPA_IP"
-echo "DNS Setup: $SETUP_DNS"
+echo "Starting IdM Server Installation"
 echo "==========================================="
 
 # Install IdM server (unattended)
@@ -126,7 +126,7 @@ fi
 
 # --- Firewall setup ---
 echo "Configuring firewall..."
-systemctl restart firewalld
+systemctl restart firewalld || true
 firewall-cmd --permanent --add-service=freeipa-ldap || true
 firewall-cmd --permanent --add-service=freeipa-ldaps || true
 firewall-cmd --permanent --add-service=freeipa-replication || true
@@ -155,14 +155,12 @@ if ipactl status >/dev/null 2>&1; then
 else
     echo "WARNING: ipa-server-install may have failed to complete."
     echo "Check /var/log/ipaserver-install.log for details."
+    exit 1
 fi
 
 
 
-
-
-
-
+echo ""
 echo "=========================================="
 echo "IPA Enrollment User Setup"
 echo "=========================================="
@@ -177,19 +175,12 @@ fi
 # Get admin credentials
 if ! klist &>/dev/null 2>&1; then
     echo "[+] Authenticating as admin..."
-    
-    if [ -n "$IPA_ADMIN_PASSWORD" ]; then
-        echo "$IPA_ADMIN_PASSWORD" | kinit admin
-    else
-        echo "Please enter the IPA admin password:"
-        kinit admin
-    fi
-    
+    echo "$IPA_ADMIN_PASSWORD" | kinit admin
     if ! klist &>/dev/null 2>&1; then
         echo "[✖] Failed to obtain Kerberos credentials"
         exit 1
     fi
-    echo "[✔] Authenticated successfully"
+    echo "[✓] Authenticated successfully"
 else
     echo "[=] Already authenticated"
     klist | head -n 3
@@ -200,29 +191,24 @@ echo ""
 # Check if enrollment user already exists
 if ipa user-show "$ENROLL_USERNAME" &>/dev/null; then
     echo "[!] User '$ENROLL_USERNAME' already exists"
-    read -p "Do you want to reset the password? (y/N): " -r
-    echo
-    
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "[+] Resetting password for $ENROLL_USERNAME..."
-        echo "$ENROLL_PASSWORD" | ipa user-mod "$ENROLL_USERNAME" --password
-        echo "[✔] Password reset"
-    else
-        echo "[=] Keeping existing user"
-    fi
+    echo "[+] Resetting password for $ENROLL_USERNAME..."
+    printf "%s\n%s\n" "$ENROLL_PASSWORD" "$ENROLL_PASSWORD" | \
+        ipa user-mod "$ENROLL_USERNAME" \
+        --password \
+        --password-expiration="2099-12-31 23:59:59Z"
+    echo "[✓] Password reset"
 else
     # Create enrollment user
     echo "[+] Creating enrollment user: $ENROLL_USERNAME"
-    
-    # Use expect-style input or printf for password
     printf "%s\n%s\n" "$ENROLL_PASSWORD" "$ENROLL_PASSWORD" | \
         ipa user-add "$ENROLL_USERNAME" \
         --first=Enrollment \
         --last=User \
-        --password
+        --password \
+        --password-expiration="2099-12-31 23:59:59Z"
     
     if [ $? -eq 0 ]; then
-        echo "[✔] Enrollment user created successfully"
+        echo "[✓] Enrollment user created successfully"
     else
         echo "[✖] Failed to create enrollment user"
         exit 1
@@ -233,45 +219,107 @@ echo ""
 
 # Grant enrollment permissions
 echo "[+] Granting 'Enrollment Administrator' role..."
-
-if ipa role-add-member "Enrollment Administrator" --users="$ENROLL_USERNAME" 2>&1 | grep -q "member.*already a member"; then
-    echo "[=] User already has Enrollment Administrator role"
-elif ipa role-show "Enrollment Administrator" --users 2>&1 | grep -q "$ENROLL_USERNAME"; then
+if ipa role-add-member "Enrollment Administrator" --users="$ENROLL_USERNAME" 2>&1 | grep -q "This entry is already a member"; then
     echo "[=] User already has Enrollment Administrator role"
 else
     ipa role-add-member "Enrollment Administrator" --users="$ENROLL_USERNAME"
-    echo "[✔] Role granted successfully"
+    echo "[✓] Role granted successfully"
 fi
 
 echo ""
 
+# Initialize password (clear "must change" flag)
+echo "[+] Completing password initialization for $ENROLL_USERNAME..."
 
+# Get realm in uppercase
+IPA_REALM="${IPA_DOMAIN^^}"
+
+# Try to authenticate to ensure password is active
+if echo "${ENROLL_PASSWORD}" | kinit "${ENROLL_USERNAME}@${IPA_REALM}" 2>/dev/null; then
+    echo "[✓] Password initialization complete"
+    kdestroy -A 2>/dev/null || true
+else
+    echo "[!] Initial kinit failed, trying password change flow..."
+    
+    # If expect is available, use it for password change
+    if command -v expect &>/dev/null; then
+        expect <<EOF
+set timeout 10
+spawn kinit ${ENROLL_USERNAME}@${IPA_REALM}
+expect {
+    "Password for" {
+        send "${ENROLL_PASSWORD}\r"
+        exp_continue
+    }
+    "Enter new password:" {
+        send "${ENROLL_PASSWORD}\r"
+        expect "Enter it again:"
+        send "${ENROLL_PASSWORD}\r"
+        expect eof
+    }
+    timeout {
+        puts "\[!\] Timeout during password initialization"
+        exit 1
+    }
+    eof
+}
+EOF
+        kdestroy -A 2>/dev/null || true
+        echo "[✓] Password initialization complete via expect"
+    else
+        echo "[!] 'expect' not available. Trying manual verification..."
+        # Manual verification attempt
+        if echo "${ENROLL_PASSWORD}" | kinit "${ENROLL_USERNAME}@${IPA_REALM}" 2>/dev/null; then
+            echo "[✓] Password now works"
+            kdestroy -A 2>/dev/null || true
+        else
+            echo "[!] Could not automatically initialize password"
+            echo "    Please manually run on the IPA server:"
+            echo "    kinit ${ENROLL_USERNAME}@${IPA_REALM}"
+            echo "    (Enter password when prompted, may need to change it)"
+        fi
+    fi
+fi
+
+echo ""
+
+# Final verification
+echo "[+] Testing authentication..."
+if echo "${ENROLL_PASSWORD}" | kinit "${ENROLL_USERNAME}@${IPA_REALM}" 2>/dev/null; then
+    echo "[✓] Enrollment user can authenticate successfully"
+    kdestroy -A 2>/dev/null || true
+else
+    echo "[!] Warning: Could not verify authentication"
+    echo "    Manual initialization may be required"
+fi
+
+echo ""
 
 # Verify setup
 echo "[+] Verifying enrollment user configuration..."
 echo ""
-ipa user-show "$ENROLL_USERNAME"
-
+ipa user-show "$ENROLL_USERNAME" 2>/dev/null || echo "[!] Could not retrieve user details"
 echo ""
+
 echo "=========================================="
-echo "[✔] Setup Complete!"
+echo "[✓] Setup Complete!"
 echo "=========================================="
 echo ""
 echo "Enrollment user details:"
 echo "  Username: $ENROLL_USERNAME"
 echo "  Password: $ENROLL_PASSWORD"
+echo "  Realm: $IPA_REALM"
 echo "  Role: Enrollment Administrator"
 echo ""
 echo "Use on clients with these environment variables:"
 echo ""
-echo "  Environment=\"IPA_ENROLL_PRINCIPAL=$ENROLL_USERNAME\""
-echo "  Environment=\"IPA_ENROLL_PASSWORD=$ENROLL_PASSWORD\""
+echo "  export IPA_ENROLL_PRINCIPAL=$ENROLL_USERNAME"
+echo "  export IPA_ENROLL_PASSWORD='$ENROLL_PASSWORD'"
 echo ""
 echo "⚠️  SECURITY NOTE:"
 echo "  - Store this password securely"
 echo "  - Consider using a keytab for production"
 echo "  - Rotate password regularly"
 echo ""
-
 
 exit 0
