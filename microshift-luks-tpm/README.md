@@ -35,6 +35,27 @@ This image includes:
 
 ---
 
+## Extracting Installable Artifacts (ISO)
+
+The GitHub Actions workflow creates two types of outputs:
+
+1. **Bootc container image**: [ghcr.io/luisarizmendi/bootc-microshift-luks-tpm:{label}](https://github.com/luisarizmendi/bootc-images/pkgs/container/bootc-microshift-luks-tpm)
+2. **Artifact container image**: [ghcr.io/luisarizmendi/bootc-microshift-luks-tpm-anaconda-iso:{label}](https://github.com/luisarizmendi/bootc-images/pkgs/container/bootc-microshift-luks-tpm-anaconda-iso)
+
+To extract installable artifacts (ISOs, disk images, etc.) from the artifact container images:
+
+```bash
+# Example: Extract an anaconda-iso artifact
+mkdir artifacts
+podman create --name temp-container ghcr.io/luisarizmendi/bootc-microshift-luks-tpm-anaconda-iso:v1-amd64
+podman cp temp-container:/ ./artifacts/
+
+# The installable files will be in ./artifacts/
+ls -la artifacts/bootiso/
+```
+
+---
+
 ## Device requirements
 
 - At least 2 cores and 2 GB of memory and 20GB disk, best 4 cores, 4 GB of memory and 50GB disk.
@@ -92,5 +113,4 @@ After the device boots, you must complete the following steps to ensure proper o
 - Monitoring actions will only be triggered after the initial post-boot configuration is completed.
 - The system is designed for edge/demo environments and integrates tightly with Red Hat tools.
 - Installable artifact (ISO) will create demo user in the device: admin/redhat.
-
 

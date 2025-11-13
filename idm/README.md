@@ -13,6 +13,27 @@ This image includes:
 
 ---
 
+## Extracting Installable Artifacts (ISO)
+
+The GitHub Actions workflow creates two types of outputs:
+
+1. **Bootc container image**: [ghcr.io/luisarizmendi/bootc-idm:{label}](https://github.com/luisarizmendi/bootc-images/pkgs/container/bootc-idm)
+2. **Artifact container image**: [ghcr.io/luisarizmendi/bootc-idm-anaconda-iso:{label}](https://github.com/luisarizmendi/bootc-images/pkgs/container/bootc-idm-anaconda-iso)
+
+To extract installable artifacts (ISOs, disk images, etc.) from the artifact container images:
+
+```bash
+# Example: Extract an anaconda-iso artifact
+mkdir artifacts
+podman create --name temp-container ghcr.io/luisarizmendi/bootc-idm-anaconda-iso:v1-amd64
+podman cp temp-container:/ ./artifacts/
+
+# The installable files will be in ./artifacts/
+ls -la artifacts/bootiso/
+```
+
+---
+
 ## Device Requirements
 
 - **Minimum:** 2 cores, 4 GB of memory and 20GB disk.
