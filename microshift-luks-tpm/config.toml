@@ -38,68 +38,100 @@ cat /tmp/dynamic-partition.ks
 
 %include /tmp/dynamic-partition.ks
 
-%post --log=/var/log/anaconda/post-install.log
+%post --log=/var/log/anaconda/post-install.log --nochroot
 set -ex
 
-# Store LUKS passphrase for first-boot TPM2 enrollment
-echo -n "redhat" > /root/luks-passphrase.txt
-chmod 600 /root/luks-passphrase.txt
+# TPM2 enrollment MUST happen here (post-install, nochroot) before first boot
+PASSPHRASE="redhat"
 
-# Detect all LUKS-encrypted partitions
+# Find all LUKS devices
 LUKS_DEVS=$(blkid -t TYPE="crypto_LUKS" -o device | sort -u)
-echo "$LUKS_DEVS" > /root/luks-devices.txt
+
+# Check if TPM2 is available
+if [ ! -e /dev/tpmrm0 ]; then
+    echo "WARNING: No TPM2 device found. Skipping enrollment."
+else
+    echo "TPM2 device found. Enrolling LUKS devices..."
+    
+    # Enroll each LUKS device with TPM2
+    for dev in $LUKS_DEVS; do
+        echo "Enrolling $dev with TPM2..."
+        echo -n "$PASSPHRASE" | systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 "$dev" || {
+            echo "WARNING: Failed to enroll $dev"
+        }
+    done
+    
+    # Update crypttab in the installed system
+    > /mnt/sysroot/etc/crypttab.new
+    for dev in $LUKS_DEVS; do
+        UUID=$(blkid -s UUID -o value "$dev")
+        NAME="luks-$UUID"
+        
+        # Check if this is a swap partition
+        MAPPER="/dev/mapper/$NAME"
+        if [ -e "$MAPPER" ] && lsblk -no FSTYPE "$MAPPER" 2>/dev/null | grep -q swap; then
+            echo "$NAME UUID=$UUID none tpm2-device=auto,discard,swap" >> /mnt/sysroot/etc/crypttab.new
+        else
+            echo "$NAME UUID=$UUID none tpm2-device=auto,discard" >> /mnt/sysroot/etc/crypttab.new
+        fi
+    done
+    
+    mv /mnt/sysroot/etc/crypttab.new /mnt/sysroot/etc/crypttab
+    
+    # Regenerate initramfs with TPM2 support
+    chroot /mnt/sysroot dracut -f --regenerate-all
+    
+    echo "TPM2 enrollment completed successfully"
+fi
+%end
+
+%post --log=/var/log/anaconda/post-install-chroot.log
+set -ex
+
+# Detect LVMS LUKS device and set up for first boot
+LUKS_DEVS=$(blkid -t TYPE="crypto_LUKS" -o device | sort -u)
 ROOT_MAPPER=$(findmnt -n -o SOURCE / | grep '/dev/mapper/' || true)
 LVMS_LUKS_DEV=""
+
 for dev in $LUKS_DEVS; do
     UUID=$(blkid -s UUID -o value "$dev")
     MAPPER="/dev/mapper/luks-$UUID"
     TYPE=$(lsblk -no FSTYPE "$MAPPER" 2>/dev/null || echo "")
+    
+    # Skip swap and root partitions
     [ "$TYPE" = "swap" ] && continue
     [ "$MAPPER" = "$ROOT_MAPPER" ] && continue
+    
     LVMS_LUKS_DEV="$dev"
-    echo "$LVMS_LUKS_DEV" > /root/lvms-luks-device.txt
     break
 done
 
-# Create TPM2 enrollment and LVMS setup script in /var
-mkdir -p /var/lib/tpm2-enrollment
-cat > /var/lib/tpm2-enrollment/tpm2-enroll-and-lvms.sh << 'EOFSCRIPT'
+# Create LVMS setup script for first boot (if LVMS partition exists)
+if [ -n "$LVMS_LUKS_DEV" ]; then
+    echo "$LVMS_LUKS_DEV" > /root/lvms-luks-device.txt
+    
+    mkdir -p /var/lib/microshift-setup
+    cat > /var/lib/microshift-setup/setup-lvms.sh << 'EOFSCRIPT'
 #!/bin/bash
 set -e
-LOGFILE="/var/log/tpm2-enrollment-lvms.log"
+LOGFILE="/var/log/microshift-lvms-setup.log"
 exec > >(tee -a "$LOGFILE") 2>&1
-echo "=== TPM2 Enrollment and LVMS Setup started at $(date) ==="
-[ ! -f /root/luks-passphrase.txt ] && echo "Already completed" && exit 0
-[ ! -e /dev/tpmrm0 ] && echo "ERROR: No TPM2 device" && exit 1
-PASSPHRASE=$(cat /root/luks-passphrase.txt)
-chmod 600 /root/luks-passphrase.txt
-LUKS_DEVS=$(cat /root/luks-devices.txt)
-for dev in $LUKS_DEVS; do
-    echo "Enrolling $dev..."
-    echo -n "$PASSPHRASE" | systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 --unlock-key-file=/root/luks-passphrase.txt "$dev" || echo "Failed: $dev"
-done
-> /etc/crypttab.new
-for dev in $LUKS_DEVS; do
-    UUID=$(blkid -s UUID -o value "$dev")
-    NAME="luks-$UUID"
-    if lsblk -no FSTYPE "/dev/mapper/$NAME" 2>/dev/null | grep -q swap; then
-        echo "$NAME UUID=$UUID none tpm2-device=auto,discard,swap" >> /etc/crypttab.new
-    else
-        echo "$NAME UUID=$UUID none tpm2-device=auto,discard" >> /etc/crypttab.new
-    fi
-done
-mv /etc/crypttab.new /etc/crypttab
-dracut -f --regenerate-all
-if [ -f /root/lvms-luks-device.txt ]; then
-    LVMS_LUKS_DEV=$(cat /root/lvms-luks-device.txt)
-    UUID=$(blkid -s UUID -o value "$LVMS_LUKS_DEV")
-    MAPPER="/dev/mapper/luks-$UUID"
-    if [ -e "$MAPPER" ] && ! vgs microshift &>/dev/null; then
-        pvcreate -ff -y "$MAPPER"
-        vgcreate microshift "$MAPPER"
-        vgchange -ay microshift
-        mkdir -p /etc/microshift
-        cat > /etc/microshift/lvms.yaml << 'EOFYAML'
+echo "=== MicroShift LVMS Setup started at $(date) ==="
+
+[ ! -f /root/lvms-luks-device.txt ] && echo "Already completed" && exit 0
+
+LVMS_LUKS_DEV=$(cat /root/lvms-luks-device.txt)
+UUID=$(blkid -s UUID -o value "$LVMS_LUKS_DEV")
+MAPPER="/dev/mapper/luks-$UUID"
+
+if [ -e "$MAPPER" ] && ! vgs microshift &>/dev/null; then
+    echo "Setting up LVMS on $MAPPER..."
+    pvcreate -ff -y "$MAPPER"
+    vgcreate microshift "$MAPPER"
+    vgchange -ay microshift
+    
+    mkdir -p /etc/microshift
+    cat > /etc/microshift/lvms.yaml << 'EOFYAML'
 socket-name: /run/topolvm/lvmd.sock
 device-classes:
   - name: default
@@ -107,40 +139,40 @@ device-classes:
     spare-gb: 0
     default: true
 EOFYAML
-        echo "LVMS configured"
-    fi
+    echo "LVMS configured successfully"
 fi
-shred -u /root/luks-passphrase.txt 2>/dev/null || rm -f /root/luks-passphrase.txt
-rm -f /root/lvms-luks-device.txt /root/luks-devices.txt
-systemctl disable tpm2-enroll-lvms.service
-echo "=== Completed. Rebooting in 10s ==="
-sleep 10
-reboot
+
+rm -f /root/lvms-luks-device.txt
+systemctl disable microshift-lvms-setup.service
+
+echo "=== LVMS setup completed at $(date) ==="
 EOFSCRIPT
 
-chmod 700 /var/lib/tpm2-enrollment/tpm2-enroll-and-lvms.sh
-semanage fcontext -a -t bin_t "/var/lib/tpm2-enrollment(/.*)?"
-restorecon -Rv /var/lib/tpm2-enrollment
-
-# Create systemd service in /etc
-mkdir -p /etc/systemd/system
-cat > /etc/systemd/system/tpm2-enroll-lvms.service << 'EOFSVC'
+    chmod 700 /var/lib/microshift-setup/setup-lvms.sh
+    semanage fcontext -a -t bin_t "/var/lib/microshift-setup(/.*)?" || true
+    restorecon -Rv /var/lib/microshift-setup || true
+    
+    # Create systemd service
+    mkdir -p /etc/systemd/system
+    cat > /etc/systemd/system/microshift-lvms-setup.service << 'EOFSVC'
 [Unit]
-Description=TPM2 Enrollment and MicroShift LVMS Setup
+Description=MicroShift LVMS Setup
 After=local-fs.target
 Before=microshift.service
-ConditionPathExists=/root/luks-passphrase.txt
+ConditionPathExists=/root/lvms-luks-device.txt
 
 [Service]
 Type=oneshot
-ExecStart=/var/lib/tpm2-enrollment/tpm2-enroll-and-lvms.sh
+ExecStart=/var/lib/microshift-setup/setup-lvms.sh
 RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
 EOFSVC
 
-systemctl enable tpm2-enroll-lvms.service
+    systemctl enable microshift-lvms-setup.service
+fi
+
 %end
 
 reboot --eject
