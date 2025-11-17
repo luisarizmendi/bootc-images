@@ -840,7 +840,7 @@ jobs:
   # Summary job
   summary:
     name: Build Summary
-    needs: [setup, build-image, create-manifest]
+    needs: [setup, build-image, create-manifest, build-artifacts]
     runs-on: ubuntu-latest
     if: always()
     env:
