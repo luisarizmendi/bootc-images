@@ -34,6 +34,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc /usr/local/.ghcup
+          sudo rm -rf /opt/hostedtoolcache/Ruby
+          sudo apt-get clean
+          docker system prune -af || true
+
       - name: Install skopeo for artifact detection
         run: |
           sudo apt-get update
@@ -615,6 +624,14 @@ jobs:
             echo "ERROR: No artifacts were created!"
             exit 1
           fi
+
+          echo "=== Disk space ==="
+          df -h
+          echo ""
+          echo "=== Container images ==="
+          podman image list
+          echo ""
+
           echo "Removing $IMAGE"
           podman rmi "$IMAGE"
           podman rmi quay.io/centos-bootc/bootc-image-builder:latest
