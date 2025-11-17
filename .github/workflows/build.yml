@@ -568,8 +568,11 @@ jobs:
 
       - name: Check available disk space
         run: |
-          echo "=== Disk space before cleanup ==="
+          echo "=== Disk space before ==="
           df -h
+          echo ""
+          echo "=== Container images ==="
+          podman image list
 
       - name: Create bootc artifact with bootc-image-builder
         run: |
@@ -612,6 +615,9 @@ jobs:
             echo "ERROR: No artifacts were created!"
             exit 1
           fi
+          echo "Removing $IMAGE"
+          podman rmi "$IMAGE"
+
 
       - name: Create scratch container image with artifact
         id: artifact_image
