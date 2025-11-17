@@ -72,10 +72,11 @@ echo "=== TPM2 Enrollment and LVMS Setup started at $(date) ==="
 [ ! -f /root/luks-passphrase.txt ] && echo "Already completed" && exit 0
 [ ! -e /dev/tpmrm0 ] && echo "ERROR: No TPM2 device" && exit 1
 PASSPHRASE=$(cat /root/luks-passphrase.txt)
+chmod 600 /root/luks-passphrase.txt
 LUKS_DEVS=$(cat /root/luks-devices.txt)
 for dev in $LUKS_DEVS; do
     echo "Enrolling $dev..."
-    echo -n "$PASSPHRASE" | systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 "$dev" || echo "Failed: $dev"
+    echo -n "$PASSPHRASE" | systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 --unlock-key-file=/root/luks-passphrase.txt "$dev" || echo "Failed: $dev"
 done
 > /etc/crypttab.new
 for dev in $LUKS_DEVS; do
@@ -118,7 +119,8 @@ reboot
 EOFSCRIPT
 
 chmod 700 /var/lib/tpm2-enrollment/tpm2-enroll-and-lvms.sh
-
+semanage fcontext -a -t bin_t "/var/lib/tpm2-enrollment(/.*)?"
+restorecon -Rv /var/lib/tpm2-enrollment
 
 # Create systemd service in /etc
 mkdir -p /etc/systemd/system
