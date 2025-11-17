@@ -617,6 +617,7 @@ jobs:
           fi
           echo "Removing $IMAGE"
           podman rmi "$IMAGE"
+          podman rmi quay.io/centos-bootc/bootc-image-builder:latest
 
       - name: Check available disk space
         run: |
