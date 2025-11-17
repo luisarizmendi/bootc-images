@@ -34,6 +34,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check available disk space
+        run: |
+          echo "=== Disk space ==="
+          df -h
+          echo ""
+
       - name: Install skopeo for artifact detection
         run: |
           sudo apt-get update
@@ -358,15 +364,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Free disk space
-        run: |
-          rm -rf /usr/share/dotnet
-          rm -rf /usr/local/lib/android
-          rm -rf /opt/ghc /usr/local/.ghcup
-          rm -rf /opt/hostedtoolcache/Ruby
-          apt-get clean
-          docker system prune -af || true
 
       - name: Get container tools in UBI builder
         run: dnf -y install podman buildah skopeo jq
