@@ -38,7 +38,7 @@ RUN dnf install -y podman-plugins inotify-tools firewalld microshift microshift-
 
 COPY files/ /
 
-RUN chmod +x /usr/local/sbin/* && chmod +x /usr/local/bin/* && \
+RUN chmod +x /usr/local/bin/* && \
     ln -s /usr/lib/systemd/system/file-monitor.service /etc/systemd/system/multi-user.target.wants/file-monitor.service && \
     ln -s /usr/lib/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
     ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service
