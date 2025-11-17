@@ -568,7 +568,7 @@ jobs:
 
       - name: Check available disk space
         run: |
-          echo "=== Disk space before ==="
+          echo "=== Disk space before build==="
           df -h
           echo ""
           echo "=== Container images ==="
@@ -618,6 +618,13 @@ jobs:
           echo "Removing $IMAGE"
           podman rmi "$IMAGE"
 
+      - name: Check available disk space
+        run: |
+          echo "=== Disk space after build ==="
+          df -h
+          echo ""
+          echo "=== Container images ==="
+          podman image list
 
       - name: Create scratch container image with artifact
         id: artifact_image
@@ -643,6 +650,14 @@ jobs:
 
           echo "artifact_image=$ARTIFACT_IMAGE_NAME" >> "$GITHUB_OUTPUT"
           echo "artifact_tag=$ARTIFACT_IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check available disk space
+        run: |
+          echo "=== Disk space before artifact push ==="
+          df -h
+          echo ""
+          echo "=== Container images ==="
+          podman image list
 
       - name: Push artifact image to registry
         uses: redhat-actions/push-to-registry@v2
