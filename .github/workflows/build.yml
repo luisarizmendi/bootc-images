@@ -482,7 +482,7 @@ jobs:
       DEST_REGISTRY_USER: "${{ vars.DEST_REGISTRY_USER || github.repository_owner }}"
       DEST_REGISTRY_PASSWORD: "${{ secrets.DEST_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}"
     container:
-      image: quay.io/centos-bootc/bootc-image-builder:latest
+      image: registry.access.redhat.com/ubi9/ubi
       options: --privileged --user root
     permissions:
       contents: write
