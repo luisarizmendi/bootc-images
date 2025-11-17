@@ -38,7 +38,6 @@ RUN dnf install -y inotify-tools firewalld microshift microshift-cert-manager mi
 COPY files/ /
 
 RUN chmod +x /usr/local/sbin/* && chmod +x /usr/local/bin/* && \
-    chmod +x /var/lib/tpm2-enrollment/tpm2-enroll-and-lvms.sh && \
     ln -s /usr/lib/systemd/system/file-monitor.service /etc/systemd/system/multi-user.target.wants/file-monitor.service && \
     ln -s /usr/lib/systemd/system/setup-8021x-cert.service /etc/systemd/system/multi-user.target.wants/setup-8021x-cert.service && \
     ln -s /usr/lib/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
