@@ -22,25 +22,24 @@ RUN dnf -y copr enable @redhat-et/flightctl && \
 
 ################################################################################
 
-
 ARG USHIFT_VER
 
 RUN dnf config-manager \
         --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
         --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms
 
-RUN dnf install -y inotify-tools firewalld microshift microshift-cert-manager microshift-olm dialog certmonger ipa-client \
-    systemd cryptsetup tpm2-tools tpm2-tss pciutils \
-    systemd-udev dracut && \
+RUN dnf install -y podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm dialog \
+     shadow-utils libvirt-daemon-config-network libvirt-daemon-kvm qemu-kvm qemu-img libvirt virt-install virt-viewer libguestfs-tools python3-libguestfs virt-top \
+     cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording && \
+    for drv in qemu network nodedev nwfilter secret storage interface; do systemctl enable virt${drv}d{,-ro,-admin}.socket; done && \
     systemctl enable microshift && \
-    systemctl enable certmonger.service && \
+    systemctl enable cockpit.socket && \
     dnf clean all
 
 COPY files/ /
 
 RUN chmod +x /usr/local/sbin/* && chmod +x /usr/local/bin/* && \
     ln -s /usr/lib/systemd/system/file-monitor.service /etc/systemd/system/multi-user.target.wants/file-monitor.service && \
-    ln -s /usr/lib/systemd/system/setup-8021x-cert.service /etc/systemd/system/multi-user.target.wants/setup-8021x-cert.service && \
     ln -s /usr/lib/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
     ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service
 
@@ -52,14 +51,3 @@ RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
     firewall-offline-cmd --zone=public --add-port=6443/tcp && \
     firewall-offline-cmd --zone=public --add-port=30000-32767/tcp
 
-# Certmonger restart
-RUN mkdir -p /etc/systemd/system/certmonger.service.d && \
-    echo -e "[Service]\nRestart=on-failure\nRestartSec=10s" > /etc/systemd/system/certmonger.service.d/restart.conf
-
-# Generate new initramfs.img with systemd-cryptenroll support
-RUN set -xe; \
-    kver=$(ls /usr/lib/modules | sort -Vr | head -n1); \
-    dracut --force --add "crypt systemd tpm2-tss" \
-           --install "systemd-cryptenroll cryptsetup" \
-           --no-hostonly \
-           /usr/lib/modules/$kver/initramfs.img "$kver"

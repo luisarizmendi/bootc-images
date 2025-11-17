@@ -1,0 +1,127 @@
+[customizations.installer.kickstart]
+contents = '''
+network --bootproto=dhcp --device=link --activate --onboot=on
+zerombr
+user --name=admin --password=$6$nRAle.gs2bcemfTO$n706swfUtMOVfIZ2QngZCQD4OWGoOwWhAYvbzh1zPuMgD1t.Qo6b.3LQPcoVNZnQZ7RjIJi43Jik1VMbRiR.B/ --groups=wheel --iscrypted
+
+%pre --interpreter=/bin/bash
+set -ex
+
+# Detect the first non-removable physical disk
+DISK=$(lsblk -ndo NAME,TYPE,RO,RM | awk '$2=="disk" && $3==0 && $4==0 {print "/dev/"$1; exit}')
+
+if [ -z "$DISK" ]; then
+    echo "ERROR: No suitable disk found!" >&2
+    exit 1
+fi
+
+# Calculate partition sizes (30% for LVMS, 15% for root minimum)
+TOTAL=$(blockdev --getsize64 "$DISK")
+LVMS_SIZE_MIB=$(( TOTAL * 30 / 100 / 1048576 ))
+ROOT_MIN_SIZE_MIB=$(( TOTAL * 15 / 100 / 1048576 ))
+
+echo "Disk: $DISK"
+echo "LVMS VG size: ${LVMS_SIZE_MIB} MiB"
+echo "Root minimum: ${ROOT_MIN_SIZE_MIB} MiB"
+
+# Generate dynamic partition configuration
+cat <<EOF > /tmp/dynamic-partition.ks
+clearpart --all --drives=$(basename $DISK)
+reqpart --add-boot
+part swap --size=2048 --ondisk=$(basename $DISK)
+part pv.01 --size=${LVMS_SIZE_MIB} --ondisk=$(basename $DISK)
+part / --size=${ROOT_MIN_SIZE_MIB} --grow --ondisk=$(basename $DISK) --fstype=xfs
+EOF
+
+cat /tmp/dynamic-partition.ks
+%end
+
+%include /tmp/dynamic-partition.ks
+
+%post --log=/var/log/anaconda/post-install.log
+set -ex
+
+# Detect the LVMS physical volume
+LVMS_PV=$(pvs --noheadings -o pv_name,vg_name | awk '$2=="" {print $1; exit}')
+
+if [ -n "$LVMS_PV" ]; then
+    echo "$LVMS_PV" > /root/lvms-pv-device.txt
+fi
+
+# Create LVMS setup script in /var
+mkdir -p /var/lib/lvms-setup
+cat > /var/lib/lvms-setup/lvms-setup.sh << 'EOFSCRIPT'
+#!/bin/bash
+set -e
+LOGFILE="/var/log/lvms-setup.log"
+exec > >(tee -a "$LOGFILE") 2>&1
+echo "=== MicroShift LVMS Setup started at $(date) ==="
+
+# Check if already completed
+if vgs microshift &>/dev/null; then
+    echo "LVMS already configured"
+    systemctl disable lvms-setup.service
+    exit 0
+fi
+
+# Check if we have a PV device recorded
+if [ ! -f /root/lvms-pv-device.txt ]; then
+    echo "ERROR: No LVMS PV device found"
+    exit 1
+fi
+
+LVMS_PV=$(cat /root/lvms-pv-device.txt)
+
+if [ -e "$LVMS_PV" ]; then
+    echo "Creating volume group on $LVMS_PV"
+    vgcreate microshift "$LVMS_PV"
+    vgchange -ay microshift
+    
+    # Create LVMS configuration
+    mkdir -p /etc/microshift
+    cat > /etc/microshift/lvms.yaml << 'EOFYAML'
+socket-name: /run/topolvm/lvmd.sock
+device-classes:
+  - name: default
+    volume-group: microshift
+    spare-gb: 0
+    default: true
+EOFYAML
+    echo "LVMS configured successfully"
+else
+    echo "ERROR: LVMS PV device $LVMS_PV not found"
+    exit 1
+fi
+
+# Cleanup
+rm -f /root/lvms-pv-device.txt
+systemctl disable lvms-setup.service
+
+echo "=== LVMS Setup completed at $(date) ==="
+EOFSCRIPT
+
+chmod 700 /var/lib/lvms-setup/lvms-setup.sh
+
+# Create systemd service in /etc
+mkdir -p /etc/systemd/system
+cat > /etc/systemd/system/lvms-setup.service << 'EOFSVC'
+[Unit]
+Description=MicroShift LVMS Setup
+After=local-fs.target
+Before=microshift.service
+ConditionPathExists=/root/lvms-pv-device.txt
+
+[Service]
+Type=oneshot
+ExecStart=/var/lib/lvms-setup/lvms-setup.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOFSVC
+
+systemctl enable lvms-setup.service
+%end
+
+reboot --eject
+'''
