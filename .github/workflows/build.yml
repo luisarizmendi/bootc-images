@@ -522,6 +522,54 @@ jobs:
           password: ${{ env.DEST_REGISTRY_PASSWORD }}
           auth_file_path: /run/containers/0/auth.json
 
+
+
+      - name: Configure container storage and output directories
+        run: |
+          set -euo pipefail
+          
+          # Show what we have
+          echo "=== /mnt contents ==="
+          ls -la /mnt || true
+          
+          # Try to create directories, fall back to /tmp if /mnt fails
+          if mkdir -p /mnt/containers/storage /mnt/output 2>/dev/null; then
+            echo "Successfully created directories in /mnt"
+            STORAGE_ROOT="/mnt/containers/storage"
+            OUTPUT_DIR="/mnt/output"
+          else
+            echo "Cannot write to /mnt, using /var/tmp instead"
+            mkdir -p /var/tmp/containers/storage /var/tmp/output
+            STORAGE_ROOT="/var/tmp/containers/storage"
+            OUTPUT_DIR="/var/tmp/output"
+          fi
+          
+          # Export for later steps
+          echo "STORAGE_ROOT=$STORAGE_ROOT" >> $GITHUB_ENV
+          echo "OUTPUT_DIR=$OUTPUT_DIR" >> $GITHUB_ENV
+          
+          # Configure container storage
+          mkdir -p /etc/containers
+          cat > /etc/containers/storage.conf << EOF
+          [storage]
+          driver = "overlay"
+          runroot = "/run/containers/storage"
+          graphroot = "$STORAGE_ROOT"
+
+          [storage.options]
+          additionalimagestores = []
+
+          [storage.options.overlay]
+          mountopt = "nodev,metacopy=on"
+          EOF
+          
+          echo "=== Storage configuration ==="
+          cat /etc/containers/storage.conf
+          
+          # Initialize podman storage
+          podman info | grep -A 5 "graphRoot"
+
+
       - name: Determine image version
         id: version
         shell: bash
@@ -585,7 +633,9 @@ jobs:
           set -euo pipefail
 
           IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.dir }}:latest-${{ matrix.arch }}"
-          mkdir -p /mnt/output  # Changed from ./output
+          
+          echo "Using output directory: $OUTPUT_DIR"
+          echo "Using storage root: $STORAGE_ROOT"
 
           echo "Creating ${{ matrix.format }} artifact for $IMAGE"
 
@@ -598,14 +648,14 @@ jobs:
             echo "No config.toml found for ${{ matrix.dir }}, proceeding without custom configuration"
           fi
 
-          # Run bootc-image-builder with /mnt/output
+          # Run bootc-image-builder
           podman run \
             --rm \
             --privileged \
             --pull=newer \
             --security-opt label=type:unconfined_t \
-            -v /mnt/output:/output \
-            -v /mnt/containers/storage:/var/lib/containers/storage \
+            -v ${OUTPUT_DIR}:/output \
+            -v ${STORAGE_ROOT}:/var/lib/containers/storage \
             ${CONFIG_MOUNT} \
             quay.io/centos-bootc/bootc-image-builder:latest \
             --type ${{ matrix.format }} \
@@ -614,10 +664,10 @@ jobs:
 
           # List created files
           echo "Created artifacts:"
-          ls -la /mnt/output/
+          ls -la ${OUTPUT_DIR}/
 
           # Verify we have the expected output
-          if [ ! "$(ls -A /mnt/output/)" ]; then
+          if [ ! "$(ls -A ${OUTPUT_DIR}/)" ]; then
             echo "ERROR: No artifacts were created!"
             exit 1
           fi
