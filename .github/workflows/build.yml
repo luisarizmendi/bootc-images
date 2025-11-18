@@ -11,6 +11,10 @@ on:
         description: 'Export formats (comma-separated)'
         required: true
         default: 'anaconda-iso'
+      base_path:
+        description: 'Base path for image directories (e.g., "devices" or leave empty for root)'
+        required: false
+        default: ''
   push:
     branches:
       - main
@@ -23,6 +27,7 @@ jobs:
     outputs:
       platforms: ${{ steps.setup.outputs.platforms }}
       formats: ${{ steps.setup.outputs.formats }}
+      base_path: ${{ steps.setup.outputs.base_path }}
       matrix: ${{ steps.setup.outputs.matrix }}
       artifact_matrix: ${{ steps.setup.outputs.artifact_matrix }}
       dirs: ${{ steps.setup.outputs.dirs }}
@@ -55,11 +60,22 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PLATFORMS="${{ github.event.inputs.platforms }}"
             FORMATS="${{ github.event.inputs.formats }}"
+            BASE_PATH="${{ github.event.inputs.base_path }}"
           else
             PLATFORMS="linux/amd64,linux/arm64"
             FORMATS="anaconda-iso"
+            BASE_PATH="${{ vars.BASE_PATH || '' }}"
           fi
 
+          # Normalize base path (remove leading/trailing slashes)
+          if [ -n "$BASE_PATH" ]; then
+            BASE_PATH=$(echo "$BASE_PATH" | sed 's#^/*##' | sed 's#/*$##')
+            echo "Using base path: $BASE_PATH"
+          else
+            echo "Using root directory as base path"
+          fi
+
+          echo "base_path=$BASE_PATH" >> "$GITHUB_OUTPUT"
           echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
           echo "formats=$FORMATS" >> "$GITHUB_OUTPUT"
 
@@ -188,7 +204,14 @@ jobs:
             return 0
           }
 
-          # Detect changed top-level directories
+          # Function to extract image name from full path
+          get_image_name() {
+            local full_path="$1"
+            # Get the last component of the path
+            echo "$(basename "$full_path")"
+          }
+
+          # Detect changed directories under the base path
           if [ "${{ github.event_name }}" = "push" ]; then
             BEFORE="${{ github.event.before }}"
             AFTER="${{ github.sha }}"
@@ -206,34 +229,67 @@ jobs:
             
             echo "Changed files: $CHANGED_FILES"
             
-            # Extract top-level directories from the changed files
-            if [ -n "$CHANGED_FILES" ]; then
-              # Use a more robust method to extract directories
-              CHANGED_DIRS=$(echo "$CHANGED_FILES" | grep -E '^[^/]+/' | cut -d'/' -f1 | sort -u || echo "")
+            # Filter changed files to only those under BASE_PATH
+            if [ -n "$BASE_PATH" ]; then
+              echo "Filtering changes to base path: $BASE_PATH/"
+              FILTERED_FILES=$(echo "$CHANGED_FILES" | grep "^${BASE_PATH}/" || echo "")
+              echo "Filtered files: $FILTERED_FILES"
+            else
+              FILTERED_FILES="$CHANGED_FILES"
+            fi
+            
+            # Extract directories from the filtered files
+            if [ -n "$FILTERED_FILES" ]; then
+              if [ -n "$BASE_PATH" ]; then
+                # Extract first-level subdirectories under BASE_PATH
+                CHANGED_DIRS=$(echo "$FILTERED_FILES" | \
+                  grep "^${BASE_PATH}/[^/]\+/" | \
+                  sed "s#^${BASE_PATH}/\([^/]\+\)/.*#${BASE_PATH}/\1#" | \
+                  sort -u || echo "")
+              else
+                # Extract top-level directories from root
+                CHANGED_DIRS=$(echo "$FILTERED_FILES" | grep -E '^[^/]+/' | cut -d'/' -f1 | sort -u || echo "")
+              fi
             else
               CHANGED_DIRS=""
             fi
           else
-            # For manual runs, find all top-level dirs with a Containerfile
-            CHANGED_DIRS=$(find . -maxdepth 2 -type f -name 'Containerfile' -printf '%h\n' | sed 's#^\./##' | awk -F/ '{print $1}' | sort -u)
+            # For manual runs, find all directories with a Containerfile under BASE_PATH
+            if [ -n "$BASE_PATH" ]; then
+              if [ -d "$BASE_PATH" ]; then
+                CHANGED_DIRS=$(find "$BASE_PATH" -mindepth 1 -maxdepth 1 -type d | sort)
+              else
+                echo "Base path $BASE_PATH does not exist"
+                CHANGED_DIRS=""
+              fi
+            else
+              CHANGED_DIRS=$(find . -maxdepth 1 -type d ! -path . ! -path './.*' | sed 's#^\./##' | sort)
+            fi
           fi
 
-          echo "Changed top-level dirs (raw): $CHANGED_DIRS"
+          echo "Changed directories (raw): $CHANGED_DIRS"
 
           # Keep only those that currently exist AND contain a Containerfile AND have substantial changes
           BUILD_DIRS=()
+          BUILD_IMAGE_NAMES=()
           for d in $CHANGED_DIRS; do
             if [ -f "$d/Containerfile" ]; then
               # For push events, check if only .buildconfig changed
               if [ "${{ github.event_name }}" = "push" ]; then
                 if directory_has_substantial_changes "$d" "$BEFORE" "$AFTER"; then
                   BUILD_DIRS+=("$d")
+                  IMAGE_NAME=$(get_image_name "$d")
+                  BUILD_IMAGE_NAMES+=("$IMAGE_NAME")
+                  echo "Will build: $d (image name: $IMAGE_NAME)"
                 else
                   echo "Skipping $d (only .buildconfig changed)"
                 fi
               else
                 # For manual runs, always include
                 BUILD_DIRS+=("$d")
+                IMAGE_NAME=$(get_image_name "$d")
+                BUILD_IMAGE_NAMES+=("$IMAGE_NAME")
+                echo "Will build: $d (image name: $IMAGE_NAME)"
               fi
             else
               echo "Skipping $d (no Containerfile or directory deleted)"
@@ -241,6 +297,7 @@ jobs:
           done
 
           echo "Final build directories: ${BUILD_DIRS[*]}"
+          echo "Final image names: ${BUILD_IMAGE_NAMES[*]}"
 
           # Set outputs based on whether we have directories to build
           if [ ${#BUILD_DIRS[@]} -eq 0 ]; then
@@ -270,7 +327,9 @@ jobs:
             artifact_first=1
             has_any_artifacts=false
 
-            for DIR in "${BUILD_DIRS[@]:-}"; do
+            for idx in "${!BUILD_DIRS[@]}"; do
+              DIR="${BUILD_DIRS[$idx]}"
+              IMAGE_NAME="${BUILD_IMAGE_NAMES[$idx]}"
               [ -z "$DIR" ] && continue
 
               # Get allowed platforms for this directory (same for both images and artifacts)
@@ -307,11 +366,11 @@ jobs:
 
                 if [ $first -eq 0 ]; then MATRIX+=","; fi
                 first=0
-                MATRIX+="{\"platform\":\"$PLATFORM\",\"arch\":\"$ARCH\",\"runner\":\"$RUNNER\",\"dir\":\"$DIR\",\"keep_version\":\"$KEEP_VERSION\"}"
+                MATRIX+="{\"platform\":\"$PLATFORM\",\"arch\":\"$ARCH\",\"runner\":\"$RUNNER\",\"dir\":\"$DIR\",\"image_name\":\"$IMAGE_NAME\",\"keep_version\":\"$KEEP_VERSION\"}"
               done
 
               # Handle artifact configuration
-              IMAGE_BASE="${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}/${{ vars.DEST_REGISTRY_USER || github.repository_owner }}/bootc-$DIR"
+              IMAGE_BASE="${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}/${{ vars.DEST_REGISTRY_USER || github.repository_owner }}/bootc-$IMAGE_NAME"
               ARTIFACT_CONFIG=$(get_artifact_config "$DIR" "$FORMATS" "$ALLOWED_PLATFORMS")
               IFS='|' read -ra CONFIG_PARTS <<< "$ARTIFACT_CONFIG"
               CREATE_ARTIFACTS="${CONFIG_PARTS[0]}"
@@ -370,7 +429,7 @@ jobs:
                   for ARTIFACT_FORMAT in "${ARTIFACT_FORMAT_ARRAY[@]}"; do
                     if [ $artifact_first -eq 0 ]; then ARTIFACT_MATRIX+=","; fi
                     artifact_first=0
-                    ARTIFACT_MATRIX+="{\"platform\":\"$ARTIFACT_PLATFORM\",\"arch\":\"$ARTIFACT_ARCH\",\"runner\":\"$ARTIFACT_RUNNER\",\"dir\":\"$DIR\",\"format\":\"$ARTIFACT_FORMAT\",\"keep_version\":\"$KEEP_VERSION\"}"
+                    ARTIFACT_MATRIX+="{\"platform\":\"$ARTIFACT_PLATFORM\",\"arch\":\"$ARTIFACT_ARCH\",\"runner\":\"$ARTIFACT_RUNNER\",\"dir\":\"$DIR\",\"image_name\":\"$IMAGE_NAME\",\"format\":\"$ARTIFACT_FORMAT\",\"keep_version\":\"$KEEP_VERSION\"}"
                   done
                 done
               fi
@@ -396,7 +455,7 @@ jobs:
 
   # Matrix job: Build the bootc image for each (directory, platform)
   build-image:
-    name: Build ${{ matrix.dir }} (${{ matrix.arch }})
+    name: Build ${{ matrix.image_name }} (${{ matrix.arch }})
     needs: setup
     if: needs.setup.outputs.has_dirs == 'true'
     strategy:
@@ -455,13 +514,13 @@ jobs:
           password: ${{ secrets.SOURCE_REGISTRY_PASSWORD || secrets.RH_PASSWORD }}
           auth_file_path: /run/containers/0/auth.json
 
-      - name: Compute semantic version tag (vN) for ${{ matrix.dir }}
+      - name: Compute semantic version tag (vN) for ${{ matrix.image_name }}
         id: version
         shell: bash
         run: |
           set -euo pipefail
 
-          IMAGE_NAME="bootc-${{ matrix.dir }}"
+          IMAGE_NAME="bootc-${{ matrix.image_name }}"
           IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${IMAGE_NAME}"
           KEEP_VERSION="${{ matrix.keep_version }}"
 
@@ -506,7 +565,7 @@ jobs:
         id: build
         uses: redhat-actions/buildah-build@v2
         with:
-          image: ${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.dir }}
+          image: ${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.image_name }}
           tags: |
             latest-${{ matrix.arch }}
             ${{ github.sha }}-${{ matrix.arch }}
@@ -538,7 +597,7 @@ jobs:
 
 # Matrix job: Build installable artifacts for each (directory, platform, format)
   build-artifacts:
-    name: Build ${{ matrix.dir }} artifacts (${{ matrix.arch }}, ${{ matrix.format }})
+    name: Build ${{ matrix.image_name }} artifacts (${{ matrix.arch }}, ${{ matrix.format }})
     needs: [setup, build-image]
     if: needs.setup.outputs.has_artifacts == 'true'
     strategy:
@@ -621,7 +680,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          IMAGE_NAME="bootc-${{ matrix.dir }}"
+          IMAGE_NAME="bootc-${{ matrix.image_name }}"
           IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${IMAGE_NAME}"
           KEEP_VERSION="${{ matrix.keep_version }}"
 
@@ -670,7 +729,7 @@ jobs:
 
       - name: Pull bootc image for artifact creation
         run: |
-          IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.dir }}:latest-${{ matrix.arch }}"
+          IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.image_name }}:latest-${{ matrix.arch }}"
           echo "Pulling bootc image: $IMAGE"
           podman pull "$IMAGE"
 
@@ -686,7 +745,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.dir }}:latest-${{ matrix.arch }}"
+          IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.image_name }}:latest-${{ matrix.arch }}"
           
           echo "Using output directory: $OUTPUT_DIR"
 
@@ -790,7 +849,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          ARTIFACT_IMAGE_NAME="${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.dir }}-${{ matrix.format }}"
+          ARTIFACT_IMAGE_NAME="${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.image_name }}-${{ matrix.format }}"
           ARTIFACT_IMAGE_TAG="${{ steps.version.outputs.version }}-${{ matrix.arch }}"
 
           echo "Creating scratch image: $ARTIFACT_IMAGE_NAME:$ARTIFACT_IMAGE_TAG"
@@ -897,6 +956,13 @@ jobs:
             echo "false"
           }
 
+          # Function to extract image name from full path
+          get_image_name() {
+            local full_path="$1"
+            # Get the last component of the path
+            echo "$(basename "$full_path")"
+          }
+
           IFS=',' read -ra GLOBAL_PLATFORM_ARRAY <<< "${{ needs.setup.outputs.platforms }}"
 
           # Iterate directories detected in setup (JSON array)
@@ -908,9 +974,10 @@ jobs:
           IFS=',' read -ra DIRS <<< "$DIRS_CLEAN"
 
           for DIR in "${DIRS[@]}"; do
-            IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$DIR"
+            IMAGE_NAME=$(get_image_name "$DIR")
+            IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$IMAGE_NAME"
 
-            echo "\n=== Processing bootc-$DIR ==="
+            echo "\n=== Processing bootc-$IMAGE_NAME (from $DIR) ==="
 
             # Get allowed platforms for this directory
             ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
@@ -1082,6 +1149,13 @@ jobs:
             echo "$create_artifacts,$artifact_formats"
           }
 
+          # Function to extract image name from full path
+          get_image_name() {
+            local full_path="$1"
+            # Get the last component of the path
+            echo "$(basename "$full_path")"
+          }
+
           echo "## Build Summary" >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ needs.setup.outputs.has_dirs }}" != "true" ]; then
             echo "No buildable directory changes detected in this run." >> "$GITHUB_STEP_SUMMARY"
@@ -1091,6 +1165,12 @@ jobs:
           echo "### Global Configuration" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Platforms**: ${{ needs.setup.outputs.platforms }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Formats**: ${{ needs.setup.outputs.formats }}" >> "$GITHUB_STEP_SUMMARY"
+          BASE_PATH="${{ needs.setup.outputs.base_path }}"
+          if [ -n "$BASE_PATH" ]; then
+            echo "- **Base Path**: $BASE_PATH" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- **Base Path**: / (root)" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           DIRS_JSON='${{ needs.setup.outputs.dirs }}'
@@ -1100,6 +1180,7 @@ jobs:
 
           echo "### Bootc Images Built" >> "$GITHUB_STEP_SUMMARY"
           for DIR in "${DIRS[@]}"; do
+            IMAGE_NAME=$(get_image_name "$DIR")
             ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
             KEEP_VERSION=$(get_keep_version "$DIR")
             
@@ -1116,9 +1197,9 @@ jobs:
             fi
             
             if [ -n "$EXTRA_INFO" ]; then
-              echo "- **$DIR** ($EXTRA_INFO): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$DIR:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
+              echo "- **$IMAGE_NAME** (from $DIR, $EXTRA_INFO): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$IMAGE_NAME:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "- **$DIR**: \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$DIR:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
+              echo "- **$IMAGE_NAME** (from $DIR): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$IMAGE_NAME:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
 
@@ -1132,6 +1213,7 @@ jobs:
 
             # Group by directory and show formats/platforms
             for DIR in "${DIRS[@]}"; do
+              IMAGE_NAME=$(get_image_name "$DIR")
               ARTIFACT_CONFIG=$(get_artifact_config "$DIR" "$FORMATS" "$ALLOWED_PLATFORMS")
               IFS='|' read -ra CONFIG_PARTS <<< "$ARTIFACT_CONFIG"
               CREATE_ARTIFACTS="${CONFIG_PARTS[0]}"
@@ -1144,14 +1226,14 @@ jobs:
               DIR_PLATFORMS=$(echo "$ARTIFACT_MATRIX_JSON" | jq -r --arg dir "$DIR" '.include[] | select(.dir == $dir) | .platform' | sort -u | tr '\n' ',' | sed 's/,$//')
 
               if [ -n "$DIR_FORMATS" ]; then
-                echo "- **$DIR**:" >> "$GITHUB_STEP_SUMMARY"
+                echo "- **$IMAGE_NAME** (from $DIR):" >> "$GITHUB_STEP_SUMMARY"
                 echo "  - **Formats**: $DIR_FORMATS" >> "$GITHUB_STEP_SUMMARY"
                 echo "  - **Platforms**: $DIR_PLATFORMS" >> "$GITHUB_STEP_SUMMARY"
 
                 # List the artifact images
                 IFS=',' read -ra FORMAT_ARRAY <<< "$DIR_FORMATS"
                 for FORMAT in "${FORMAT_ARRAY[@]}"; do
-                  echo "  - **Image**: \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$DIR-$FORMAT:{latest | vN}\`" >> "$GITHUB_STEP_SUMMARY"
+                  echo "  - **Image**: \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$IMAGE_NAME-$FORMAT:{latest | vN}\`" >> "$GITHUB_STEP_SUMMARY"
                 done
               fi
             done
@@ -1167,6 +1249,7 @@ jobs:
           echo "- Deleted directories are ignored gracefully (no build attempted)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Version tags are created as vN (and vN-<arch> for platform images)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Platform restrictions can be specified using a \`.buildconfig\` file in each directory." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Base path can be configured using the \`BASE_PATH\` variable or workflow input." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "#### .buildconfig options:" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`platforms: linux/amd64,linux/arm64\` - Restrict platforms for both bootc images and artifacts (default: linux/amd64,linux/arm64)" >> "$GITHUB_STEP_SUMMARY"
