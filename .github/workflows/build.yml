@@ -84,6 +84,22 @@ jobs:
             echo "$default_platforms"
           }
 
+          # Function to get keep_version setting for a directory
+          get_keep_version() {
+            local dir="$1"
+
+            if [ -f "$dir/.buildconfig" ]; then
+              local keep_version=$(grep -E '^keep_version\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^keep_version\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+              if [ "$keep_version" = "true" ]; then
+                echo "true"
+                return
+              fi
+            fi
+
+            # Default to false
+            echo "false"
+          }
+
           # Function to get artifact configuration for a directory
           get_artifact_config() {
             local dir="$1"
@@ -141,6 +157,37 @@ jobs:
             echo "false"
           }
 
+          # Function to check if only .buildconfig changed in a directory
+          directory_has_substantial_changes() {
+            local dir="$1"
+            local before="$2"
+            local after="$3"
+            
+            # Get all changed files in this directory
+            if [ "$before" = "0000000000000000000000000000000000000000" ] || [ -z "$before" ]; then
+              # Initial commit - all files are new, so it's a substantial change
+              return 0
+            fi
+            
+            local dir_changes=$(git diff --name-only "$before" "$after" -- "$dir/" 2>/dev/null || echo "")
+            
+            if [ -z "$dir_changes" ]; then
+              # No changes in directory
+              return 1
+            fi
+            
+            # Check if any file other than .buildconfig changed
+            local non_buildconfig_changes=$(echo "$dir_changes" | grep -v "^${dir}/\.buildconfig$" || echo "")
+            
+            if [ -z "$non_buildconfig_changes" ]; then
+              echo "Directory $dir: Only .buildconfig changed, skipping build"
+              return 1
+            fi
+            
+            # Substantial changes found
+            return 0
+          }
+
           # Detect changed top-level directories
           if [ "${{ github.event_name }}" = "push" ]; then
             BEFORE="${{ github.event.before }}"
@@ -173,11 +220,21 @@ jobs:
 
           echo "Changed top-level dirs (raw): $CHANGED_DIRS"
 
-          # Keep only those that currently exist AND contain a Containerfile
+          # Keep only those that currently exist AND contain a Containerfile AND have substantial changes
           BUILD_DIRS=()
           for d in $CHANGED_DIRS; do
             if [ -f "$d/Containerfile" ]; then
-              BUILD_DIRS+=("$d")
+              # For push events, check if only .buildconfig changed
+              if [ "${{ github.event_name }}" = "push" ]; then
+                if directory_has_substantial_changes "$d" "$BEFORE" "$AFTER"; then
+                  BUILD_DIRS+=("$d")
+                else
+                  echo "Skipping $d (only .buildconfig changed)"
+                fi
+              else
+                # For manual runs, always include
+                BUILD_DIRS+=("$d")
+              fi
             else
               echo "Skipping $d (no Containerfile or directory deleted)"
             fi
@@ -220,6 +277,10 @@ jobs:
               ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "$PLATFORMS")
               echo "Directory $DIR platforms: $ALLOWED_PLATFORMS"
 
+              # Get keep_version setting
+              KEEP_VERSION=$(get_keep_version "$DIR")
+              echo "Directory $DIR keep_version: $KEEP_VERSION"
+
               IFS=',' read -ra ALLOWED_PLATFORM_ARRAY <<< "$ALLOWED_PLATFORMS"
 
               for PLATFORM in "${ALLOWED_PLATFORM_ARRAY[@]}"; do
@@ -246,7 +307,7 @@ jobs:
 
                 if [ $first -eq 0 ]; then MATRIX+=","; fi
                 first=0
-                MATRIX+="{\"platform\":\"$PLATFORM\",\"arch\":\"$ARCH\",\"runner\":\"$RUNNER\",\"dir\":\"$DIR\"}"
+                MATRIX+="{\"platform\":\"$PLATFORM\",\"arch\":\"$ARCH\",\"runner\":\"$RUNNER\",\"dir\":\"$DIR\",\"keep_version\":\"$KEEP_VERSION\"}"
               done
 
               # Handle artifact configuration
@@ -309,7 +370,7 @@ jobs:
                   for ARTIFACT_FORMAT in "${ARTIFACT_FORMAT_ARRAY[@]}"; do
                     if [ $artifact_first -eq 0 ]; then ARTIFACT_MATRIX+=","; fi
                     artifact_first=0
-                    ARTIFACT_MATRIX+="{\"platform\":\"$ARTIFACT_PLATFORM\",\"arch\":\"$ARTIFACT_ARCH\",\"runner\":\"$ARTIFACT_RUNNER\",\"dir\":\"$DIR\",\"format\":\"$ARTIFACT_FORMAT\"}"
+                    ARTIFACT_MATRIX+="{\"platform\":\"$ARTIFACT_PLATFORM\",\"arch\":\"$ARTIFACT_ARCH\",\"runner\":\"$ARTIFACT_RUNNER\",\"dir\":\"$DIR\",\"format\":\"$ARTIFACT_FORMAT\",\"keep_version\":\"$KEEP_VERSION\"}"
                   done
                 done
               fi
@@ -402,8 +463,10 @@ jobs:
 
           IMAGE_NAME="bootc-${{ matrix.dir }}"
           IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${IMAGE_NAME}"
+          KEEP_VERSION="${{ matrix.keep_version }}"
 
           echo "Determining version for: $IMAGE_BASE"
+          echo "Keep version setting: $KEEP_VERSION"
 
           # Get existing tags from the registry using skopeo
           EXISTING_TAGS=""
@@ -422,10 +485,18 @@ jobs:
           else
             # Find the highest version number
             HIGHEST_VERSION=$(echo "$EXISTING_TAGS" | tail -n1)
-            HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
-            NEXT_NUM=$((HIGHEST_NUM + 1))
-            NEXT_TAG="v${NEXT_NUM}"
-            echo "Highest existing version: $HIGHEST_VERSION, next version: $NEXT_TAG"
+            
+            if [ "$KEEP_VERSION" = "true" ]; then
+              # Keep the existing version
+              NEXT_TAG="$HIGHEST_VERSION"
+              echo "Keeping existing version: $NEXT_TAG (keep_version=true)"
+            else
+              # Increment the version
+              HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
+              NEXT_NUM=$((HIGHEST_NUM + 1))
+              NEXT_TAG="v${NEXT_NUM}"
+              echo "Highest existing version: $HIGHEST_VERSION, next version: $NEXT_TAG"
+            fi
           fi
 
           echo "NEXT_TAG=$NEXT_TAG" | tee -a "$GITHUB_ENV"
@@ -552,8 +623,10 @@ jobs:
 
           IMAGE_NAME="bootc-${{ matrix.dir }}"
           IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${IMAGE_NAME}"
+          KEEP_VERSION="${{ matrix.keep_version }}"
 
           echo "Determining version for: $IMAGE_BASE"
+          echo "Keep version setting: $KEEP_VERSION"
 
           # Get existing tags from the registry using skopeo
           EXISTING_TAGS=""
@@ -572,16 +645,23 @@ jobs:
           else
             # Find the highest version number - this should be the one just built
             HIGHEST_VERSION=$(echo "$EXISTING_TAGS" | tail -n1)
-            # Check if platform-specific tag exists for incremented version
-            HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
-            INCREMENTED_VERSION="v$((HIGHEST_NUM + 1))"
-
-            if skopeo inspect "docker://${IMAGE_BASE}:${INCREMENTED_VERSION}-${{ matrix.arch }}" >/dev/null 2>&1; then
-              CURRENT_TAG="$INCREMENTED_VERSION"
-              echo "Using incremented version: $CURRENT_TAG"
-            else
+            
+            if [ "$KEEP_VERSION" = "true" ]; then
+              # Use the existing version
               CURRENT_TAG="$HIGHEST_VERSION"
-              echo "Using highest existing version: $CURRENT_TAG"
+              echo "Using existing version: $CURRENT_TAG (keep_version=true)"
+            else
+              # Check if platform-specific tag exists for incremented version
+              HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
+              INCREMENTED_VERSION="v$((HIGHEST_NUM + 1))"
+
+              if skopeo inspect "docker://${IMAGE_BASE}:${INCREMENTED_VERSION}-${{ matrix.arch }}" >/dev/null 2>&1; then
+                CURRENT_TAG="$INCREMENTED_VERSION"
+                echo "Using incremented version: $CURRENT_TAG"
+              else
+                CURRENT_TAG="$HIGHEST_VERSION"
+                echo "Using highest existing version: $CURRENT_TAG"
+              fi
             fi
           fi
 
@@ -801,6 +881,22 @@ jobs:
             echo "$default_platforms"
           }
 
+          # Function to get keep_version setting for a directory
+          get_keep_version() {
+            local dir="$1"
+
+            if [ -f "$dir/.buildconfig" ]; then
+              local keep_version=$(grep -E '^keep_version\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^keep_version\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+              if [ "$keep_version" = "true" ]; then
+                echo "true"
+                return
+              fi
+            fi
+
+            # Default to false
+            echo "false"
+          }
+
           IFS=',' read -ra GLOBAL_PLATFORM_ARRAY <<< "${{ needs.setup.outputs.platforms }}"
 
           # Iterate directories detected in setup (JSON array)
@@ -819,6 +915,10 @@ jobs:
             # Get allowed platforms for this directory
             ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
             echo "Directory $DIR platforms: $ALLOWED_PLATFORMS"
+
+            # Get keep_version setting
+            KEEP_VERSION=$(get_keep_version "$DIR")
+            echo "Directory $DIR keep_version: $KEEP_VERSION"
 
             # Filter allowed platforms to only include those that were actually built
             IFS=',' read -ra ALLOWED_PLATFORM_ARRAY <<< "$ALLOWED_PLATFORMS"
@@ -864,17 +964,24 @@ jobs:
             else
               # Find the highest version number - this should be the one just built
               HIGHEST_VERSION=$(echo "$EXISTING_TAGS" | tail -n1)
-              HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
-              NEXT_VERSION="v$((HIGHEST_NUM + 1))"
-
-              # Check if the platform-specific tags exist for the next version
-              PLATFORM_CHECK="${BUILT_PLATFORMS[0]#linux/}"
-              if skopeo inspect "docker://${IMAGE_BASE}:${NEXT_VERSION}-${PLATFORM_CHECK}" >/dev/null 2>&1; then
-                VERSION_TAG="$NEXT_VERSION"
-                echo "Using incremented version: $VERSION_TAG"
-              else
+              
+              if [ "$KEEP_VERSION" = "true" ]; then
+                # Keep the existing version
                 VERSION_TAG="$HIGHEST_VERSION"
-                echo "Using highest existing version: $VERSION_TAG"
+                echo "Using existing version: $VERSION_TAG (keep_version=true)"
+              else
+                # Check if the platform-specific tags exist for the next version
+                HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
+                NEXT_VERSION="v$((HIGHEST_NUM + 1))"
+                PLATFORM_CHECK="${BUILT_PLATFORMS[0]#linux/}"
+                
+                if skopeo inspect "docker://${IMAGE_BASE}:${NEXT_VERSION}-${PLATFORM_CHECK}" >/dev/null 2>&1; then
+                  VERSION_TAG="$NEXT_VERSION"
+                  echo "Using incremented version: $VERSION_TAG"
+                else
+                  VERSION_TAG="$HIGHEST_VERSION"
+                  echo "Using highest existing version: $VERSION_TAG"
+                fi
               fi
             fi
 
@@ -938,6 +1045,22 @@ jobs:
             echo "$default_platforms"
           }
 
+          # Function to get keep_version setting for a directory
+          get_keep_version() {
+            local dir="$1"
+
+            if [ -f "$dir/.buildconfig" ]; then
+              local keep_version=$(grep -E '^keep_version\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^keep_version\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+              if [ "$keep_version" = "true" ]; then
+                echo "true"
+                return
+              fi
+            fi
+
+            # Default to false
+            echo "false"
+          }
+
           # Function to get artifact configuration for a directory
           get_artifact_config() {
             local dir="$1"
@@ -978,8 +1101,22 @@ jobs:
           echo "### Bootc Images Built" >> "$GITHUB_STEP_SUMMARY"
           for DIR in "${DIRS[@]}"; do
             ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
+            KEEP_VERSION=$(get_keep_version "$DIR")
+            
+            EXTRA_INFO=""
             if [ "$ALLOWED_PLATFORMS" != "${{ needs.setup.outputs.platforms }}" ]; then
-              echo "- **$DIR** (platforms: $ALLOWED_PLATFORMS): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$DIR:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
+              EXTRA_INFO="platforms: $ALLOWED_PLATFORMS"
+            fi
+            if [ "$KEEP_VERSION" = "true" ]; then
+              if [ -n "$EXTRA_INFO" ]; then
+                EXTRA_INFO="$EXTRA_INFO, keep_version: true"
+              else
+                EXTRA_INFO="keep_version: true"
+              fi
+            fi
+            
+            if [ -n "$EXTRA_INFO" ]; then
+              echo "- **$DIR** ($EXTRA_INFO): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$DIR:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
             else
               echo "- **$DIR**: \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$DIR:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
             fi
@@ -1026,6 +1163,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Configuration Notes" >> "$GITHUB_STEP_SUMMARY"
           echo "- Only directories with a Containerfile that changed (or whose contents changed) are built." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Directories where only .buildconfig changed are skipped." >> "$GITHUB_STEP_SUMMARY"
           echo "- Deleted directories are ignored gracefully (no build attempted)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Version tags are created as vN (and vN-<arch> for platform images)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Platform restrictions can be specified using a \`.buildconfig\` file in each directory." >> "$GITHUB_STEP_SUMMARY"
@@ -1034,3 +1172,4 @@ jobs:
           echo "- \`platforms: linux/amd64,linux/arm64\` - Restrict platforms for both bootc images and artifacts (default: linux/amd64,linux/arm64)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`artifacts: true|false|auto\` - Enable/disable artifact creation (default: auto - create if none exist)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`artifact_formats: anaconda-iso,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY"
