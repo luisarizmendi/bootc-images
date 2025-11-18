@@ -14,4 +14,4 @@ artifact_formats: anaconda-iso
 ##### VERSION MANAGEMENT
 # Valid values: true, false
 # When true, keeps the existing version instead of incrementing (default: false)
-keep_version: true
+keep_version: false
