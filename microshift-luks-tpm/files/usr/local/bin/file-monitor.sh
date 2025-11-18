@@ -5,13 +5,14 @@ CONFIG_FILE="${FILE_MONITOR_CONFIG:-/etc/file-monitor/monitor.conf}"
 LOG_FILE="${FILE_MONITOR_LOG:-/var/log/file-monitor.log}"
 PID_FILE="/var/run/file-monitor.pid"
 
-touch $LOG_FILE
+mkdir -p "$(dirname "$LOG_FILE")"
+touch "$LOG_FILE"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
 }
 
-if ! command -v inotifywait &> /dev/null; then
+if ! command -v inotifywait &>/dev/null; then
     log "ERROR: inotifywait not found. Install: yum install inotify-tools"
     exit 1
 fi
@@ -25,101 +26,117 @@ echo $$ > "$PID_FILE"
 log "Starting file monitor service"
 log "Using configuration: $CONFIG_FILE"
 
-declare -A WATCH_PATHS
-declare -A WATCH_EVENTS
-declare -A WATCH_ACTIONS
+declare -A WATCH_DIRS       # real directories
+declare -A WATCH_EVENTS     # event lists
+declare -A WATCH_ACTIONS    # commands
+declare -A WATCH_PATTERNS   # original glob patterns
 
 parse_config() {
     local line_num=0
-    
-    if [[ ! -r "$CONFIG_FILE" ]]; then
-        log "ERROR: Cannot read configuration file: $CONFIG_FILE"
-        exit 1
-    fi
-    
     log "DEBUG: Starting config parse"
-    
+
     while IFS= read -r line || [[ -n "$line" ]]; do
-        line_num=$((line_num + 1))  # Changed from ((line_num++))
-        
-        log "DEBUG: Read line $line_num: '$line'"
-        
-        # Skip empty lines and comments
+        line_num=$((line_num + 1))
+
+        # Skip empty or comment lines
         if [[ -z "$line" ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
-            log "DEBUG: Skipping line $line_num (empty or comment)"
             continue
         fi
-        
+
         # Trim whitespace
         line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        
-        log "DEBUG: Processing line $line_num: '$line'"
-        
+
         if [[ "$line" =~ ^([^|]+)\|([^|]+)\|(.+)$ ]]; then
-            local path="${BASH_REMATCH[1]}"
+            local pattern="${BASH_REMATCH[1]}"
             local events="${BASH_REMATCH[2]}"
             local action="${BASH_REMATCH[3]}"
-            
-            log "DEBUG: Parsed path='$path' events='$events'"
-            
-            if [[ ! -e "$path" ]]; then
-                log "WARNING: Path does not exist (line $line_num): $path"
+
+            # Get directory from the pattern
+            local dir
+            dir=$(dirname "$pattern")
+
+            if [[ ! -d "$dir" ]]; then
+                log "WARNING: Directory does not exist (line $line_num): $dir"
                 continue
             fi
-            
-            WATCH_PATHS["$path"]="$path"
-            WATCH_EVENTS["$path"]="$events"
-            WATCH_ACTIONS["$path"]="$action"
-            log "Configured: $path -> Events: $events -> Action: $action"
+
+            log "DEBUG: Configured: dir='$dir' pattern='$pattern'"
+
+            WATCH_DIRS["$dir"]="$dir"
+            WATCH_EVENTS["$dir"]="$events"
+            WATCH_ACTIONS["$dir"]="$action"
+            WATCH_PATTERNS["$dir"]="$pattern"
+
         else
             log "WARNING: Invalid configuration line $line_num: $line"
         fi
     done < "$CONFIG_FILE"
-    
-    log "DEBUG: Config parse complete. Found ${#WATCH_PATHS[@]} paths"
+
+    log "DEBUG: Config parse complete. Found ${#WATCH_DIRS[@]} directories"
 }
 
 build_monitor_list() {
-    local paths=()
-    for key in "${!WATCH_PATHS[@]}"; do
-        paths+=("${WATCH_PATHS[$key]}")
+    local dirs=()
+    for d in "${!WATCH_DIRS[@]}"; do
+        dirs+=("$d")
     done
-    
-    if [[ ${#paths[@]} -eq 0 ]]; then
-        log "ERROR: No valid paths to monitor"
+
+    if [[ ${#dirs[@]} -eq 0 ]]; then
+        log "ERROR: No valid directories to monitor"
         exit 1
     fi
-    echo "${paths[@]}"
+
+    echo "${dirs[@]}"
+}
+
+event_matches_pattern() {
+    local fullpath="$1"
+    local pattern="$2"
+
+    [[ "$fullpath" == $pattern ]]
 }
 
 execute_action() {
     local path="$1"
     local event="$2"
     local file="$3"
-    
-    for key in "${!WATCH_PATHS[@]}"; do
-        if [[ "$path" == "${WATCH_PATHS[$key]}" ]]; then
-            local configured_events="${WATCH_EVENTS[$key]}"
-            local action="${WATCH_ACTIONS[$key]}"
-            
-            if [[ ",$configured_events," == *",$event,"* ]] || \
-               [[ " $configured_events " == *" $event "* ]] || \
-               [[ "$configured_events" == "all" ]]; then
-                
-                log "Event '$event' on '$path/$file' - Executing: $action"
-                
-                export MONITOR_PATH="$path"
-                export MONITOR_EVENT="$event"
-                export MONITOR_FILE="$file"
-                export MONITOR_FULLPATH="$path/$file"
-                
-                if eval "$action" >> "$LOG_FILE" 2>&1; then
-                    log "Action completed successfully"
-                else
-                    log "ERROR: Action failed with exit code $?"
-                fi
+
+    local fullpath="${path}${file}"
+
+    for key in "${!WATCH_DIRS[@]}"; do
+        local dir="${WATCH_DIRS[$key]}"
+
+        # Only process files within this directory
+        [[ "$path" == "$dir/" ]] || continue
+
+        local pattern="${WATCH_PATTERNS[$key]}"
+        local events="${WATCH_EVENTS[$key]}"
+        local action="${WATCH_ACTIONS[$key]}"
+
+        # Check pattern match
+        if ! event_matches_pattern "$fullpath" "$pattern"; then
+            continue
+        fi
+
+        # Check event match
+        if [[ "$events" != "all" ]]; then
+            if [[ ",$events," != *",$event,"* ]]; then
+                continue
             fi
-            break
+        fi
+
+        log "Event '$event' on '$fullpath' matches pattern '$pattern' → Executing: $action"
+
+        # Export variables for the user's action script
+        export MONITOR_PATH="$dir"
+        export MONITOR_EVENT="$event"
+        export MONITOR_FILE="$file"
+        export MONITOR_FULLPATH="$fullpath"
+
+        if eval "$action" >>"$LOG_FILE" 2>&1; then
+            log "Action completed successfully"
+        else
+            log "ERROR: Action failed"
         fi
     done
 }
@@ -135,26 +152,23 @@ trap cleanup SIGTERM SIGINT
 main() {
     parse_config
 
-parse_config
-
-    # Debug output
-    log "Parsed ${#WATCH_PATHS[@]} paths"
-    for key in "${!WATCH_PATHS[@]}"; do
-        log "  - $key"
+    log "Parsed ${#WATCH_DIRS[@]} directories"
+    for key in "${!WATCH_DIRS[@]}"; do
+        log "  - ${WATCH_DIRS[$key]} (pattern: ${WATCH_PATTERNS[$key]})"
     done
 
-    local monitor_paths
-    monitor_paths=$(build_monitor_list)
-    log "Monitoring ${#WATCH_PATHS[@]} path(s)"
-    
+    local monitor_dirs
+    monitor_dirs=$(build_monitor_list)
+    log "Monitoring ${#WATCH_DIRS[@]} directory(ies)"
+
     while true; do
         inotifywait -m -r -e modify,create,delete,move,attrib \
             --format '%w|%e|%f' \
-            $monitor_paths 2>> "$LOG_FILE" | \
+            $monitor_dirs 2>>"$LOG_FILE" | \
         while IFS='|' read -r path event file; do
             execute_action "$path" "$event" "$file"
         done
-        
+
         log "WARNING: inotifywait exited, restarting in 5 seconds..."
         sleep 5
     done

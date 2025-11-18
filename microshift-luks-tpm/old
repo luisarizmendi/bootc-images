@@ -14,6 +14,7 @@ DISK=$(lsblk -ndo NAME,TYPE,RO,RM | awk '$2=="disk" && $3==0 && $4==0 {print "/d
 # calculate 30% of its size to assign to the LVMS VG
 TOTAL=$(blockdev --getsize64 "$DISK")
 LVMS_SIZE_MIB=$(( TOTAL * 30 / 100 / 1048576 ))
+SYSROOT_SIZE_MIB=$(( TOTAL * 15 / 100 / 1048576 ))
 echo "Disk: $DISK (${LVMS_SIZE_MIB} MiB for LVMS)"
 
 cat <<EOF > /tmp/dynamic-partition.ks
@@ -24,12 +25,13 @@ reqpart --add-boot
 part swap --size=2048 --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
 
 # Physical partition for LVMS
-part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
-part / --size=1000 --grow --fstype xfs --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
+part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --encrypted --passphrase="redhat"
+part / --grow --fstype xfs --encrypted --passphrase="redhat"
 EOF
 %end
 
 %include /tmp/dynamic-partition.ks
+user --name=edge --shell=/bin/bash --groups=wheel --password=r3dh4t --plaintext
 
 %post --log=/var/log/anaconda/post-install.log
 set -e
@@ -60,6 +62,8 @@ for dev in $LUKS_DEVS; do
     cryptsetup luksRemoveKey "$dev" --key-file=/tmp/key || true
   fi
 done
+
+rm -f /tmp/key
 
 # Ensure crypttab has TPM2 auto-unlock
 > /etc/crypttab
@@ -100,9 +104,6 @@ EOF
     fi
 done
 
-rm -f /tmp/key
-
 %end
 reboot --eject
 '''
-
