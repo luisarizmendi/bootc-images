@@ -40,6 +40,26 @@ jobs:
           df -h
           echo ""
 
+      - name: Configure container storage to use /mnt
+        run: |
+          mkdir -p /mnt/containers
+          mkdir -p /etc/containers
+          cat > /etc/containers/storage.conf << 'EOF'
+          [storage]
+          driver = "overlay"
+          runroot = "/run/containers/storage"
+          graphroot = "/mnt/containers/storage"
+          
+          [storage.options]
+          additionalimagestores = []
+          
+          [storage.options.overlay]
+          mountopt = "nodev,metacopy=on"
+          EOF
+          
+          # Verify the configuration
+          podman info | grep -A 5 "graphRoot"
+
       - name: Install skopeo for artifact detection
         run: |
           sudo apt-get update
@@ -585,7 +605,7 @@ jobs:
           set -euo pipefail
 
           IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.dir }}:latest-${{ matrix.arch }}"
-          mkdir -p output
+          mkdir -p /mnt/output  # Changed from ./output
 
           echo "Creating ${{ matrix.format }} artifact for $IMAGE"
 
@@ -598,14 +618,14 @@ jobs:
             echo "No config.toml found for ${{ matrix.dir }}, proceeding without custom configuration"
           fi
 
-          # Run bootc-image-builder with conditional config mount
+          # Run bootc-image-builder with /mnt/output
           podman run \
             --rm \
             --privileged \
             --pull=newer \
             --security-opt label=type:unconfined_t \
-            -v ./output:/output \
-            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            -v /mnt/output:/output \
+            -v /mnt/containers/storage:/var/lib/containers/storage \
             ${CONFIG_MOUNT} \
             quay.io/centos-bootc/bootc-image-builder:latest \
             --type ${{ matrix.format }} \
@@ -614,10 +634,10 @@ jobs:
 
           # List created files
           echo "Created artifacts:"
-          ls -la output/
+          ls -la /mnt/output/
 
           # Verify we have the expected output
-          if [ ! "$(ls -A output/)" ]; then
+          if [ ! "$(ls -A /mnt/output/)" ]; then
             echo "ERROR: No artifacts were created!"
             exit 1
           fi
@@ -652,12 +672,13 @@ jobs:
           echo "Creating scratch image: $ARTIFACT_IMAGE_NAME:$ARTIFACT_IMAGE_TAG"
 
           # Create a simple Containerfile for the scratch image
-          cat > Containerfile.artifact << 'EOF'
+          cat > /mnt/Containerfile.artifact << 'EOF'
           FROM scratch
           COPY output/ /
           EOF
 
           # Build the scratch image containing the artifacts
+          cd /mnt
           buildah bud \
             --tag "$ARTIFACT_IMAGE_NAME:$ARTIFACT_IMAGE_TAG" \
             --file Containerfile.artifact \
