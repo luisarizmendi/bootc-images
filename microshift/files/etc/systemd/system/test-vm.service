@@ -1,0 +1,18 @@
+[Unit]
+Description=VM test-vm managed via virsh
+After=network-online.target libvirtd.service
+Requires=libvirtd.service
+
+[Service]
+# Start the VM by name
+ExecStart=/usr/bin/virsh start test-vm
+
+# Stop the VM gracefully (ACPI shutdown, then force off after a timeout if needed)
+ExecStop=/usr/bin/virsh shutdown test-vm
+# Optional: Add a script for a hard kill if graceful shutdown fails
+# ExecStopPost=/usr/bin/virsh destroy test-vm
+
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

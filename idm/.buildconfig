@@ -11,3 +11,7 @@ artifacts: true
 # Valid values: anaconda-iso, qcow2, vmdk, raw, ami, vhd, gce
 #artifact_formats: qcow2
 
+##### VERSION MANAGEMENT
+# Valid values: true, false
+# When true, keeps the existing version instead of incrementing (default: false)
+keep_version: false
