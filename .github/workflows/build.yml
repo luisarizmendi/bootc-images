@@ -717,16 +717,16 @@ jobs:
           echo "Using storage root: $STORAGE_ROOT"
 
           # Create a simple Containerfile for the scratch image
-          cat > ${OUTPUT_DIR}/Containerfile.artifact << 'EOF'
+          cat > /tmp/Containerfile.artifact << 'EOF'
           FROM scratch
-          COPY output/ /
+          COPY ${OUTPUT_DIR}/ /
           EOF
 
           # Build the scratch image containing the artifacts
           cd ${OUTPUT_DIR}
           buildah bud \
             --tag "$ARTIFACT_IMAGE_NAME:$ARTIFACT_IMAGE_TAG" \
-            --file Containerfile.artifact \
+            --file /tmp/Containerfile.artifact \
             .
 
           echo "artifact_image=$ARTIFACT_IMAGE_NAME" >> "$GITHUB_OUTPUT"
