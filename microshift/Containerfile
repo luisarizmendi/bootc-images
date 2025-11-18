@@ -28,7 +28,7 @@ RUN dnf config-manager \
         --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
         --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms
 
-RUN dnf install -y podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm dialog \
+RUN dnf install -y xz podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm dialog \
      shadow-utils libvirt-daemon-config-network libvirt-daemon-kvm qemu-kvm qemu-img libvirt virt-install virt-viewer libguestfs-tools python3-libguestfs virt-top \
      cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording && \
     for drv in qemu network nodedev nwfilter secret storage interface; do systemctl enable virt${drv}d{,-ro,-admin}.socket; done && \
@@ -50,3 +50,39 @@ RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
     firewall-offline-cmd --zone=public --add-port=443/tcp && \
     firewall-offline-cmd --zone=public --add-port=6443/tcp && \
     firewall-offline-cmd --zone=public --add-port=30000-32767/tcp
+
+
+#### VMs  
+
+RUN curl -L -o /var/lib/libvirt/images/test-vm.raw.xz https://download.fedoraproject.org/pub/alt/iot/43/IoT/x86_64/images/Fedora-IoT-raw-43-20251024.0.x86_64.raw.xz  && \
+    xz -d /var/lib/libvirt/images/test-vm.raw.xz   && rm /var/lib/libvirt/images/test-vm.raw.xz
+
+RUN mkdir -p  /var/lib/libvirt/images && chmod -R 0755 /var/lib/libvirt/images  && chown -R qemu:qemu /var/lib/libvirt/images && \
+    semanage fcontext -a -t virt_image_t "/var/lib/libvirt/images(/.*)?" && \
+    restorecon -Rv /var/lib/libvirt/images
+
+RUN mkdir -p /etc/libvirt/storage && \
+    cat > /etc/libvirt/storage/default.xml << 'EOF'
+<pool type='dir'>
+  <name>default</name>
+  <uuid>11111111-1111-1111-1111-111111111111</uuid>
+  <capacity unit='bytes'>0</capacity>
+  <allocation unit='bytes'>0</allocation>
+  <available unit='bytes'>0</available>
+  <source/>
+  <target>
+    <path>/var/lib/libvirt/images</path>
+    <permissions>
+      <mode>0755</mode>
+      <owner>107</owner>
+      <group>107</group>
+    </permissions>
+    <labels>
+      <selinux label='system_u:object_r:virt_image_t:s0'/>
+    </labels>
+  </target>
+</pool>
+EOF
+
+RUN virsh pool-define /etc/libvirt/storage/default.xml && \
+    virsh pool-autostart default
