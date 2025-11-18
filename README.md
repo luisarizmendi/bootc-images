@@ -232,6 +232,9 @@ artifacts: true|false|auto    # default: auto (create if none exist)
 
 # Specify artifact formats (default: anaconda-iso)
 artifact_formats: anaconda-iso,qcow2,vmdk
+
+# Reuse the same version tag (default: false)
+keep_version: false
 ```
 
 Examples restricting an image to specific architectures:
