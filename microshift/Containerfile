@@ -54,7 +54,8 @@ RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
 
 #### VMs  
 
-RUN curl -L -o /var/lib/libvirt/images/test-vm.raw.xz https://download.fedoraproject.org/pub/alt/iot/43/IoT/x86_64/images/Fedora-IoT-raw-43-20251024.0.x86_64.raw.xz  && \
+RUN mkdir -p /var/lib/libvirt/images && \
+    curl -L -o /var/lib/libvirt/images/test-vm.raw.xz https://download.fedoraproject.org/pub/alt/iot/43/IoT/x86_64/images/Fedora-IoT-raw-43-20251024.0.x86_64.raw.xz  && \
     xz -d /var/lib/libvirt/images/test-vm.raw.xz   && rm /var/lib/libvirt/images/test-vm.raw.xz
 
 RUN mkdir -p  /var/lib/libvirt/images && chmod -R 0755 /var/lib/libvirt/images  && chown -R qemu:qemu /var/lib/libvirt/images && \
