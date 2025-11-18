@@ -20,12 +20,12 @@ cat <<EOF > /tmp/dynamic-partition.ks
 clearpart --all
 reqpart --add-boot
 
-# SWAP Partition
-part swap --size=2048 --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
+# SWAP Partition (no LUKS)
+part swap --size=2048 --ondisk=$(basename $DISK)
 
-# Physical partition for LVMS
-part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
-part / --size=1000 --grow --fstype xfs --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
+# Physical partition for LVMS (no LUKS)
+part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --ondisk=$(basename $DISK)
+part / --size=1000 --grow --fstype xfs --ondisk=$(basename $DISK)
 EOF
 %end
 
@@ -34,60 +34,44 @@ EOF
 %post --log=/var/log/anaconda/post-install.log
 set -e
 
-PASSPHRASE="redhat"
-KEEP_PASSPHRASE="1"  # set empty to remove recovery key
-
-echo "Detecting LUKS partitions..."
-LUKS_DEVS=$(blkid -t TYPE="crypto_LUKS" -o device | sort -u)
-echo "Found: $LUKS_DEVS"
-
-# Temporary keyfile for non-interactive unlock
-echo -n "$PASSPHRASE" > /tmp/key
-chmod 600 /tmp/key
-
-for dev in $LUKS_DEVS; do
-  echo "Enrolling $dev into TPM2..."
-  if [ -e /dev/tpmrm0 ]; then
-    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 \
-      --unlock-key-file=/tmp/key "$dev" && echo "TPM2 enrollment OK for $dev" || echo "TPM2 enrollment failed for $dev"
-  else
-    echo "TPM2 device not found — skipping $dev"
-  fi
-
-  # Optionally remove old password key
-  if [ -z "$KEEP_PASSPHRASE" ]; then
-    echo "Removing passphrase keyslot from $dev"
-    cryptsetup luksRemoveKey "$dev" --key-file=/tmp/key || true
-  fi
-done
-
-# Ensure crypttab has TPM2 auto-unlock
-> /etc/crypttab
-for part in $(lsblk -rno NAME,FSTYPE | awk '$2=="crypto_LUKS"{print $1}'); do
-  uuid=$(blkid -s UUID -o value /dev/$part)
-  echo "luks-$uuid UUID=$uuid none tpm2-device=auto,discard" >> /etc/crypttab
-done
-
-# Rebuild initramfs to include TPM2 metadata
-echo "Regenerating initramfs..."
-dracut -f --regenerate-all
-
-# Optionally detect LVMS partition and set up microshift VG
 echo "Setting up LVMS volume group..."
-LVMS_PART=""
-SWAP_UUID=$(lsblk -f -n | grep 'SWAP' | grep 'luks-' | awk '{print $2}' | awk -F'luks-' '{print $2}')
-for dev in $LUKS_DEVS; do
-    UUID=$(blkid -s UUID -o value "$dev")
-    MAPPER="/dev/mapper/luks-$UUID"
-    if [ -e "$MAPPER" ] && [ "$UUID" != "$SWAP_UUID" ]; then
-        if ! findmnt -n -o SOURCE | grep -q "$MAPPER"; then
-            LVMS_PART="$dev"
-            echo "LVMS partition found: $LVMS_PART"
-            pvcreate -ff -y "$MAPPER"
-            vgcreate microshift "$MAPPER"
-            vgchange -ay microshift
-            mkdir -p /etc/microshift
-            cat > /etc/microshift/lvms.yaml << 'EOF'
+# Find the partition created as pv.01 and use it directly (no LUKS)
+PV_PART=""
+# Look for a partition with PARTNAME "pv.01" (works with modern installers)
+for p in $(lsblk -rno NAME,PARTNAME | awk '$2=="pv.01"{print $1}'); do
+    PV_PART="/dev/$p"
+    echo "Found pv.01 partition: $PV_PART"
+    break
+done
+
+# Fallback: if the PARTNAME lookup failed, try to guess the largest non-root, non-boot partition
+if [ -z "$PV_PART" ]; then
+    echo "pv.01 partition not found by PARTNAME; attempting fallback detection..."
+    # choose the largest partition on the selected disk that is not the root or swap
+    PV_PART=$(lsblk -rno NAME,TYPE,MOUNTPOINT,SIZE | awk -v disk="$(basename $DISK)" '
+      $2=="part" {
+        cmd = "cat /sys/class/block/" $1 "/partition 2>/dev/null"
+        if ( (cmd | getline) > 0 ) close(cmd)
+      }
+      { print $0 }
+    ' | awk '{print $1}' | while read -r part; do
+        dev="/dev/$part"
+        # skip root and boot mounts
+        if mountpoint -q "$dev"; then continue; fi
+        # prefer partitions on the chosen disk
+        if echo "$dev" | grep -q "/$(basename $DISK)"; then
+            echo "$dev"
+            break
+        fi
+    done)
+fi
+
+if [ -n "$PV_PART" ] && [ -b "$PV_PART" ]; then
+    pvcreate -ff -y "$PV_PART" || true
+    vgcreate microshift "$PV_PART" || vgchange -ay microshift
+    vgchange -ay microshift || true
+    mkdir -p /etc/microshift
+    cat > /etc/microshift/lvms.yaml << 'EOF'
 socket-name: /run/lvm/lvmpolld.socket
 device-classes:
   - name: default
@@ -95,12 +79,14 @@ device-classes:
     spare-gb: 0
     default: true
 EOF
-            break
-        fi
-    fi
-done
+    echo "LVMS VG 'microshift' configured on $PV_PART"
+else
+    echo "No suitable pv.01 partition found; skipping LVMS setup."
+fi
 
-rm -f /tmp/key
+# Regenerate initramfs (harmless even without LUKS/TPM)
+echo "Regenerating initramfs..."
+dracut -f --regenerate-all || true
 
 %end
 reboot --eject
