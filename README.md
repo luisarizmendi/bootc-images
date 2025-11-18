@@ -319,9 +319,7 @@ You can manually trigger builds with custom parameters:
 
 ## Important Notes About GitHub Runner Limitations
 
-This workflow uses GitHub's free hosted runners, which have limited disk space:
-- **Standard runners (linux/amd64)**: ~23GB available disk space
-- **ARM64 runners (linux/arm64)**: ~46GB available disk space
+This workflow uses GitHub's free hosted runners, which have limited disk space.
 
 When creating installable artifacts, especially larger formats like `raw` disk images, you may encounter disk space limitations that cause the workflow to fail.
 
