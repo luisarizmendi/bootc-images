@@ -40,31 +40,6 @@ jobs:
           df -h
           echo ""
 
-      - name: Configure container storage to use /mnt
-        run: |
-          # The container should already have access to /mnt, but let's ensure it
-          ls -la /mnt || echo "/mnt not accessible"
-          
-          # Create the storage directory with sudo if needed, or directly as root
-          mkdir -p /mnt/containers/storage
-          mkdir -p /etc/containers
-          
-          cat > /etc/containers/storage.conf << 'EOF'
-          [storage]
-          driver = "overlay"
-          runroot = "/run/containers/storage"
-          graphroot = "/mnt/containers/storage"
-
-          [storage.options]
-          additionalimagestores = []
-
-          [storage.options.overlay]
-          mountopt = "nodev,metacopy=on"
-          EOF
-          
-          # Verify the configuration
-          podman info | grep -A 5 "graphRoot"
-
       - name: Install skopeo for artifact detection
         run: |
           sudo apt-get update
@@ -382,7 +357,7 @@ jobs:
       DEST_REGISTRY_PASSWORD: "${{ secrets.DEST_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}"
     container:
       image: registry.access.redhat.com/ubi9/ubi
-      options: --privileged
+      options: --privileged -v /mnt:/mnt
     permissions:
       contents: write
       packages: write
@@ -508,7 +483,7 @@ jobs:
       DEST_REGISTRY_PASSWORD: "${{ secrets.DEST_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}"
     container:
       image: registry.access.redhat.com/ubi9/ubi
-      options: --privileged --user root
+      options: --privileged --user root -v /mnt:/mnt
     permissions:
       contents: write
       packages: write
