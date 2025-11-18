@@ -42,17 +42,22 @@ jobs:
 
       - name: Configure container storage to use /mnt
         run: |
-          mkdir -p /mnt/containers
+          # The container should already have access to /mnt, but let's ensure it
+          ls -la /mnt || echo "/mnt not accessible"
+          
+          # Create the storage directory with sudo if needed, or directly as root
+          mkdir -p /mnt/containers/storage
           mkdir -p /etc/containers
+          
           cat > /etc/containers/storage.conf << 'EOF'
           [storage]
           driver = "overlay"
           runroot = "/run/containers/storage"
           graphroot = "/mnt/containers/storage"
-          
+
           [storage.options]
           additionalimagestores = []
-          
+
           [storage.options.overlay]
           mountopt = "nodev,metacopy=on"
           EOF
