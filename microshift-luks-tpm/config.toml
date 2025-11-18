@@ -1,3 +1,5 @@
+[customizations.installer.kickstart]
+contents = '''
 network --bootproto=dhcp --device=link --activate --onboot=on
 zerombr
 
@@ -19,11 +21,11 @@ clearpart --all
 reqpart --add-boot
 
 # SWAP Partition
-part swap --size=2048 --ondisk=$(basename $DISK)
+part swap --size=2048 --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
 
 # Physical partition for LVMS
-part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --ondisk=$(basename $DISK)
-part / --size=1000 --grow --fstype xfs --ondisk=$(basename $DISK)
+part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
+part / --size=1000 --grow --fstype xfs --ondisk=$(basename $DISK) --encrypted --passphrase="redhat"
 EOF
 %end
 
@@ -32,30 +34,66 @@ EOF
 %post --log=/var/log/anaconda/post-install.log
 set -e
 
-echo "Detecting partitions for LVMS setup..."
-LVMS_PART=""
-for part in $(lsblk -rno NAME,TYPE | awk '$2=="part"{print $1}'); do
-    FSTYPE=$(lsblk -no FSTYPE /dev/$part 2>/dev/null || echo "")
-    [ "$FSTYPE" = "swap" ] && continue
-    MOUNTPOINT=$(lsblk -no MOUNTPOINT /dev/$part 2>/dev/null || echo "")
-    [ "$MOUNTPOINT" = "/" ] && continue
-    LVMS_PART="/dev/$part"
-    echo "LVMS partition found: $LVMS_PART"
-    break
+PASSPHRASE="redhat"
+KEEP_PASSPHRASE="1"  # set empty to remove recovery key
+
+echo "Detecting LUKS partitions..."
+LUKS_DEVS=$(blkid -t TYPE="crypto_LUKS" -o device | sort -u)
+echo "Found: $LUKS_DEVS"
+
+# Temporary keyfile for non-interactive unlock
+echo -n "$PASSPHRASE" > /tmp/key
+chmod 600 /tmp/key
+
+for dev in $LUKS_DEVS; do
+  echo "Enrolling $dev into TPM2..."
+  if [ -e /dev/tpmrm0 ]; then
+    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 \
+      --unlock-key-file=/tmp/key "$dev" && echo "TPM2 enrollment OK for $dev" || echo "TPM2 enrollment failed for $dev"
+  else
+    echo "TPM2 device not found — skipping $dev"
+  fi
+
+  # Optionally remove old password key
+  if [ -z "$KEEP_PASSPHRASE" ]; then
+    echo "Removing passphrase keyslot from $dev"
+    cryptsetup luksRemoveKey "$dev" --key-file=/tmp/key || true
+  fi
 done
 
-if [ -z "$LVMS_PART" ]; then
-    echo "WARNING: Could not identify LVMS partition"
-    exit 0
-fi
+# Ensure crypttab has TPM2 auto-unlock
+> /etc/crypttab
+for part in $(lsblk -rno NAME,FSTYPE | awk '$2=="crypto_LUKS"{print $1}'); do
+  uuid=$(blkid -s UUID -o value /dev/$part)
+  echo "luks-$uuid UUID=$uuid none tpm2-device=auto,discard" >> /etc/crypttab
+done
 
+# Detect LVMS partition and set up microshift VG
 echo "Setting up LVMS volume group..."
-pvcreate -ff -y "$LVMS_PART"
-vgcreate microshift "$LVMS_PART"
-vgchange -ay microshift
+LVMS_PART=""
+SWAP_UUID=$(lsblk -f -n | grep 'SWAP' | grep 'luks-' | awk '{print $2}' | awk -F'luks-' '{print $2}')
+ROOT_MAPPER=$(findmnt -n -o SOURCE / | grep '/dev/mapper/' || true)
 
-mkdir -p /etc/microshift
-cat > /etc/microshift/lvms.yaml << 'EOF'
+for dev in $LUKS_DEVS; do
+    UUID=$(blkid -s UUID -o value "$dev")
+    MAPPER="/dev/mapper/luks-$UUID"
+    if [ -e "$MAPPER" ] && [ "$UUID" != "$SWAP_UUID" ]; then
+        if [ "$MAPPER" != "$ROOT_MAPPER" ]; then
+            LVMS_PART="$dev"
+            echo "LVMS partition found: $LVMS_PART (mapper: $MAPPER)"
+            
+            # Open LUKS device with specific name for LVMS
+            echo -n "$PASSPHRASE" | cryptsetup luksOpen "$LVMS_PART" pv01 || echo "Already open or failed"
+            
+            # Create PV and VG using the named mapper
+            if [ -e /dev/mapper/pv01 ]; then
+                pvcreate -ff -y /dev/mapper/pv01
+                vgcreate microshift /dev/mapper/pv01
+                vgchange -ay microshift
+                
+                # Create LVMS configuration
+                mkdir -p /etc/microshift
+                cat > /etc/microshift/lvms.yaml << 'EOF'
 socket-name: /run/topolvm/lvmd.sock
 device-classes:
   - name: default
@@ -63,8 +101,17 @@ device-classes:
     spare-gb: 0
     default: true
 EOF
+                echo "LVMS VG 'microshift' created successfully"
+            else
+                echo "ERROR: /dev/mapper/pv01 does not exist"
+            fi
+            break
+        fi
+    fi
+done
 
-echo "LVMS configuration completed successfully"
+rm -f /tmp/key
 
 %end
 reboot --eject
+'''
