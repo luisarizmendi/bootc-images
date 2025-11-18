@@ -466,6 +466,7 @@ jobs:
         run: subscription-manager unregister
 
 # Matrix job: Build installable artifacts for each (directory, platform, format)
+# Matrix job: Build installable artifacts for each (directory, platform, format)
   build-artifacts:
     name: Build ${{ matrix.dir }} artifacts (${{ matrix.arch }}, ${{ matrix.format }})
     needs: [setup, build-image]
@@ -496,6 +497,54 @@ jobs:
           dnf -y install podman buildah skopeo jq 
           dnf clean all
 
+      - name: Configure container storage and output directories
+        run: |
+          set -euo pipefail
+          
+          # Show what we have
+          echo "=== /mnt contents ==="
+          ls -la /mnt || true
+          
+          # Try to create directories, fall back to /var/tmp if /mnt fails
+          if mkdir -p /mnt/containers/storage /mnt/output 2>/dev/null; then
+            echo "Successfully created directories in /mnt"
+            STORAGE_ROOT="/mnt/containers/storage"
+            OUTPUT_DIR="/mnt/output"
+          else
+            echo "Cannot write to /mnt, using /var/tmp instead"
+            mkdir -p /var/tmp/containers/storage /var/tmp/output
+            STORAGE_ROOT="/var/tmp/containers/storage"
+            OUTPUT_DIR="/var/tmp/output"
+          fi
+          
+          # Export for later steps
+          echo "STORAGE_ROOT=$STORAGE_ROOT" >> $GITHUB_ENV
+          echo "OUTPUT_DIR=$OUTPUT_DIR" >> $GITHUB_ENV
+          
+          # Stop any running podman processes and reset storage
+          podman system reset -f || true
+          
+          # Configure container storage BEFORE any podman operations
+          mkdir -p /etc/containers
+          cat > /etc/containers/storage.conf << EOF
+          [storage]
+          driver = "overlay"
+          runroot = "/run/containers/storage"
+          graphroot = "$STORAGE_ROOT"
+          
+          [storage.options]
+          additionalimagestores = []
+          
+          [storage.options.overlay]
+          mountopt = "nodev,metacopy=on"
+          EOF
+          
+          echo "=== Storage configuration ==="
+          cat /etc/containers/storage.conf
+          
+          # Verify the configuration is being used
+          podman info | grep -A 5 "graphRoot"
+
       - name: Register with Red Hat subscription manager
         run: |
           if [ -n "${{ secrets.RHT_ORGID }}" ] && [ -n "${{ secrets.RHT_ACT_KEY }}" ]; then
@@ -521,54 +570,6 @@ jobs:
           username: ${{ env.DEST_REGISTRY_USER }}
           password: ${{ env.DEST_REGISTRY_PASSWORD }}
           auth_file_path: /run/containers/0/auth.json
-
-
-
-      - name: Configure container storage and output directories
-        run: |
-          set -euo pipefail
-          
-          # Show what we have
-          echo "=== /mnt contents ==="
-          ls -la /mnt || true
-          
-          # Try to create directories, fall back to /tmp if /mnt fails
-          if mkdir -p /mnt/containers/storage /mnt/output 2>/dev/null; then
-            echo "Successfully created directories in /mnt"
-            STORAGE_ROOT="/mnt/containers/storage"
-            OUTPUT_DIR="/mnt/output"
-          else
-            echo "Cannot write to /mnt, using /var/tmp instead"
-            mkdir -p /var/tmp/containers/storage /var/tmp/output
-            STORAGE_ROOT="/var/tmp/containers/storage"
-            OUTPUT_DIR="/var/tmp/output"
-          fi
-          
-          # Export for later steps
-          echo "STORAGE_ROOT=$STORAGE_ROOT" >> $GITHUB_ENV
-          echo "OUTPUT_DIR=$OUTPUT_DIR" >> $GITHUB_ENV
-          
-          # Configure container storage
-          mkdir -p /etc/containers
-          cat > /etc/containers/storage.conf << EOF
-          [storage]
-          driver = "overlay"
-          runroot = "/run/containers/storage"
-          graphroot = "$STORAGE_ROOT"
-
-          [storage.options]
-          additionalimagestores = []
-
-          [storage.options.overlay]
-          mountopt = "nodev,metacopy=on"
-          EOF
-          
-          echo "=== Storage configuration ==="
-          cat /etc/containers/storage.conf
-          
-          # Initialize podman storage
-          podman info | grep -A 5 "graphRoot"
-
 
       - name: Determine image version
         id: version
@@ -648,7 +649,7 @@ jobs:
             echo "No config.toml found for ${{ matrix.dir }}, proceeding without custom configuration"
           fi
 
-          # Run bootc-image-builder
+          # Run bootc-image-builder with conditional config mount
           podman run \
             --rm \
             --privileged \
@@ -680,8 +681,8 @@ jobs:
           echo ""
 
           echo "Removing $IMAGE"
-          podman rmi "$IMAGE"
-          podman rmi quay.io/centos-bootc/bootc-image-builder:latest
+          podman rmi "$IMAGE" || true
+          podman rmi quay.io/centos-bootc/bootc-image-builder:latest || true
 
       - name: Check available disk space
         run: |
@@ -702,13 +703,13 @@ jobs:
           echo "Creating scratch image: $ARTIFACT_IMAGE_NAME:$ARTIFACT_IMAGE_TAG"
 
           # Create a simple Containerfile for the scratch image
-          cat > /mnt/Containerfile.artifact << 'EOF'
+          cat > ${OUTPUT_DIR}/Containerfile.artifact << 'EOF'
           FROM scratch
           COPY output/ /
           EOF
 
           # Build the scratch image containing the artifacts
-          cd /mnt
+          cd ${OUTPUT_DIR}
           buildah bud \
             --tag "$ARTIFACT_IMAGE_NAME:$ARTIFACT_IMAGE_TAG" \
             --file Containerfile.artifact \
@@ -735,6 +736,7 @@ jobs:
       - name: Clean up the subscription
         if: always()
         run: subscription-manager unregister
+
 
   # Job: Create multi-platform manifests for each changed directory
   create-manifest:
