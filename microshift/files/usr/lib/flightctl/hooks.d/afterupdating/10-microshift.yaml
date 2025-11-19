@@ -1,0 +1,4 @@
+- if:
+  - path: /etc/crio/
+    op: [created, updated, removed]
+  run: systemctl restart microshift

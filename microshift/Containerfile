@@ -53,33 +53,5 @@ RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
     firewall-offline-cmd --zone=public --add-port=30000-32767/tcp
 
 
-#### VMs  
-
-RUN mkdir -p  /var/lib/libvirt/images && chmod -R 0755 /var/lib/libvirt/images  && chown -R qemu:qemu /var/lib/libvirt/images && \
-    semanage fcontext -a -t virt_image_t "/var/lib/libvirt/images(/.*)?" && \
-    restorecon -Rv /var/lib/libvirt/images
-
-RUN mkdir -p /etc/libvirt/storage && \
-    cat > /etc/libvirt/storage/default.xml << 'EOF'
-<pool type='dir'>
-  <name>default</name>
-  <uuid>11111111-1111-1111-1111-111111111111</uuid>
-  <capacity unit='bytes'>0</capacity>
-  <allocation unit='bytes'>0</allocation>
-  <available unit='bytes'>0</available>
-  <source/>
-  <target>
-    <path>/var/lib/libvirt/images</path>
-    <permissions>
-      <mode>0755</mode>
-      <owner>107</owner>
-      <group>107</group>
-    </permissions>
-    <labels>
-      <selinux label='system_u:object_r:virt_image_t:s0'/>
-    </labels>
-  </target>
-</pool>
-EOF
 
 

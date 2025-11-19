@@ -1,0 +1,5 @@
+- if:
+  - path: /etc/libvirt/qemu/
+    op: [created, updated]
+  run: export LIBVIRT_DEFAULT_URI=qemu:///system && for i in ${ Files }; do virsh define $i ; done
+
