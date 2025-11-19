@@ -1,0 +1,17 @@
+[Unit]
+Description=Libvirt VM: %i
+After=libvirtd.service
+Requires=libvirtd.service
+Documentation=man:virsh(1)
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/virsh start %i
+ExecStop=/usr/bin/virsh shutdown %i
+# If shutdown takes too long, force destroy
+ExecStopPost=/bin/bash -c 'if /usr/bin/virsh list --name | grep -q "^%i$"; then /usr/bin/virsh destroy %i; fi'
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

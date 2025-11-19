@@ -1,0 +1,20 @@
+[Unit]
+Description=Get files at boot
+After=network-pre.target
+Before=network.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/get-files.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+# Retry until successful
+Restart=on-failure
+RestartSec=120
+StartLimitBurst=0
+
+[Install]
+WantedBy=multi-user.target
