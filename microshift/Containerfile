@@ -38,9 +38,9 @@ RUN dnf install -y xz yq podman-plugins inotify-tools firewalld microshift micro
 
 COPY files/ /
 
-RUN chmod +x /usr/local/bin/* && \
-    ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service 
-    #ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
+RUN chmod +x /usr/local/bin/*
+#    ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
+#    ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
 
 
 RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
