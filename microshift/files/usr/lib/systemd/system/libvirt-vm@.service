@@ -5,13 +5,13 @@ Requires=libvirtd.service
 Documentation=man:virsh(1)
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/bin/virsh start %i
+Type=notify
+ExecStart=/usr/local/bin/libvirt-vm-monitor.sh %i
 ExecStop=/usr/bin/virsh shutdown %i
-# If shutdown takes too long, force destroy
-ExecStopPost=/bin/bash -c 'if /usr/bin/virsh list --name | grep -q "^%i$"; then /usr/bin/virsh destroy %i; fi'
-TimeoutStopSec=120
+ExecStopPost=/bin/bash -c 'for i in {1..24}; do if ! /usr/bin/virsh list --name | grep -q "^%i$"; then exit 0; fi; sleep 5; done; if /usr/bin/virsh list --name | grep -q "^%i$"; then /usr/bin/virsh destroy %i; fi'
+TimeoutStopSec=180
+Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

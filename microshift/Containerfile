@@ -28,7 +28,7 @@ RUN dnf config-manager \
         --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
         --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms
 
-RUN dnf install -y xz podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm dialog \
+RUN dnf install -y xz yq podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm dialog \
      shadow-utils libvirt-daemon-config-network libvirt-daemon-kvm qemu-kvm qemu-img libvirt virt-install virt-viewer libguestfs-tools python3-libguestfs virt-top \
      cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording && \
     for drv in qemu network nodedev nwfilter secret storage interface; do systemctl enable virt${drv}d{,-ro,-admin}.socket; done && \
@@ -39,11 +39,8 @@ RUN dnf install -y xz podman-plugins inotify-tools firewalld microshift microshi
 COPY files/ /
 
 RUN chmod +x /usr/local/bin/* && \
-    ln -s /usr/lib/systemd/system/file-monitor.service /etc/systemd/system/multi-user.target.wants/file-monitor.service && \
-    ln -s /usr/lib/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
-    ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service && \
-    ln -s /usr/lib/systemd/system/configure-libvirt.service /etc/systemd/system/multi-user.target.wants/configure-libvirt.service && \
-    ln -s /usr/lib/systemd/system/get-files-at-boot.service /etc/systemd/system/multi-user.target.wants/get-files-at-boot.service
+    ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
+    ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
 
 
 RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \

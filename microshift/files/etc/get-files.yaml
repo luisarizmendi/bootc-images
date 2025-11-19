@@ -6,6 +6,7 @@
 # - owner: File owner in user:group format (optional)
 # - mode: File permissions in octal format as string, e.g., "0755" (optional)
 # - selinux_context: SELinux security context (optional)
+# - force: Set to true to force re-download even if file exists (optional, default: false)
 
 files:
     # test-vm disk
@@ -41,6 +42,8 @@ files:
 #    destination: /opt/myapp/binary
 #    owner: myapp:myapp
 #    mode: "0755"
+#    force: true
+
 
 #  # Extract configuration from container with SELinux context
 #  - type: container

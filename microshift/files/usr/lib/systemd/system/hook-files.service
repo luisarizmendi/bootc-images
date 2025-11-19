@@ -1,0 +1,15 @@
+[Unit]
+Description=File System Monitor Service
+After=local-fs.target
+Requires=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hook-files.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

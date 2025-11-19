@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: get-files.sh [config-file]
 
 VERSION="1.0.0"
-DEFAULT_CONFIG="/etc/get-files/config.yaml"
+DEFAULT_CONFIG="/etc/get-files.yaml"
 CONFIG_FILE="${1:-$DEFAULT_CONFIG}"
 LOG_ENABLED="${LOG_ENABLED:-1}"
 
@@ -59,6 +59,13 @@ download_http() {
     local owner="$3"
     local mode="$4"
     local selinux_context="$5"
+    local force="$6"
+    
+    # Check if file exists and skip if not forcing
+    if [[ -e "$destination" ]] && [[ "$force" != "true" ]]; then
+        log_info "File already exists, skipping: $destination"
+        return 0
+    fi
     
     log_info "Downloading from HTTP(S): $source"
     
@@ -67,7 +74,7 @@ download_http() {
     mkdir -p "$dest_dir"
     
     # Download with curl
-    if curl -sSLk -o "$destination" "$source"; then
+    if curl -Lk -o "$destination" "$source"; then
         log_info "Successfully downloaded to: $destination"
         
         # Set ownership if specified
@@ -108,6 +115,13 @@ download_container() {
     local owner="$4"
     local mode="$5"
     local selinux_context="$6"
+    local force="$7"
+    
+    # Check if file exists and skip if not forcing
+    if [[ -e "$destination" ]] && [[ "$force" != "true" ]]; then
+        log_info "File already exists, skipping: $destination"
+        return 0
+    fi
     
     log_info "Extracting from container: $source"
     
@@ -194,17 +208,18 @@ process_entry() {
     local mode="${5:-}"
     local selinux_context="${6:-}"
     local container_file_path="${7:-}"
+    local force="${8:-false}"
     
     case "$type" in
         http|https|HTTP|HTTPS)
-            download_http "$source" "$destination" "$owner" "$mode" "$selinux_context"
+            download_http "$source" "$destination" "$owner" "$mode" "$selinux_context" "$force"
             ;;
         container|CONTAINER)
             if [[ -z "$container_file_path" || "$container_file_path" == "null" ]]; then
                 log_error "Container file path not specified for: $source"
                 return 1
             fi
-            download_container "$source" "$container_file_path" "$destination" "$owner" "$mode" "$selinux_context"
+            download_container "$source" "$container_file_path" "$destination" "$owner" "$mode" "$selinux_context" "$force"
             ;;
         *)
             log_error "Unknown type: $type"
@@ -234,6 +249,7 @@ parse_config() {
     
     local success_count=0
     local fail_count=0
+    local skipped_count=0
     
     # Process each file entry
     for ((i=0; i<file_count; i++)); do
@@ -244,17 +260,25 @@ parse_config() {
         local mode=$(yq eval ".files[$i].mode // \"\"" "$config")
         local selinux_context=$(yq eval ".files[$i].selinux_context // \"\"" "$config")
         local container_file_path=$(yq eval ".files[$i].container_file_path // \"\"" "$config")
+        local force=$(yq eval ".files[$i].force // false" "$config")
         
         log_info "Processing entry $((i+1))/$file_count: $type -> $destination"
         
-        if process_entry "$type" "$source" "$destination" "$owner" "$mode" "$selinux_context" "$container_file_path"; then
+        # Check if file exists before processing
+        if [[ -e "$destination" ]] && [[ "$force" != "true" ]]; then
+            log_info "File already exists, skipping: $destination"
+            skipped_count=$((skipped_count + 1))
+            continue
+        fi
+        
+        if process_entry "$type" "$source" "$destination" "$owner" "$mode" "$selinux_context" "$container_file_path" "$force"; then
             success_count=$((success_count + 1))
         else
             fail_count=$((fail_count + 1))
         fi
     done
     
-    log_info "Processing complete: $success_count succeeded, $fail_count failed"
+    log_info "Processing complete: $success_count succeeded, $fail_count failed, $skipped_count skipped"
     
     if [[ $fail_count -gt 0 ]]; then
         return 1

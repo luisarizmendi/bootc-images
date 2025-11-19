@@ -1,13 +1,12 @@
 [Unit]
-Description=Get files at boot
+Description=Configure device on first boot
 After=network-pre.target
 Before=network.target
 Wants=network-pre.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/get-files.sh
-RemainAfterExit=yes
+ExecStart=/usr/local/bin/first-boot.sh
 StandardOutput=journal
 StandardError=journal
 
