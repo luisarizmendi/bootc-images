@@ -1,0 +1,11 @@
+[Unit]
+Description=Configure libvirt pool
+After=libvirtd.service
+Requires=libvirtd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/configure-libvirt.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -41,7 +41,8 @@ COPY files/ /
 RUN chmod +x /usr/local/bin/* && \
     ln -s /usr/lib/systemd/system/file-monitor.service /etc/systemd/system/multi-user.target.wants/file-monitor.service && \
     ln -s /usr/lib/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
-    ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service
+    ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service && \
+    ln -s /usr/lib/systemd/system/configure-libvirt.service /etc/systemd/system/multi-user.target.wants/configure-libvirt.service
 
 RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
     firewall-offline-cmd --zone=trusted --add-source=169.254.169.1 && \
@@ -85,5 +86,4 @@ RUN mkdir -p /etc/libvirt/storage && \
 </pool>
 EOF
 
-RUN virsh pool-define /etc/libvirt/storage/default.xml && \
-    virsh pool-autostart default
+
