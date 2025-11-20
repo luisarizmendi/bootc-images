@@ -3,7 +3,7 @@ contents = '''
 network --bootproto=dhcp --device=link --activate --onboot=on
 zerombr
 
-user --name=admin --password=$6$nRAle.gs2bcemfTO$n706swfUtMOVfIZ2QngZCQD4OWGoOwWhAYvbzh1zPuMgD1t.Qo6b.3LQPcoVNZnQZ7RjIJi43Jik1VMbRiR.B/ --groups=wheel --iscrypted
+user --name=admin --password=$6$nRAle.gs2bcemfTO$n706swfUtMOVfIZ2QngZCQD4OWGoOwWhAYvbzh1zPuMgD1t.Qo6b.3LQPcoVNZnQZ7RjIJi43Jik1VMbRiR.B/ --groups=wheel,libvirt --iscrypted
 
 %pre --interpreter=/bin/bash
 set -ex

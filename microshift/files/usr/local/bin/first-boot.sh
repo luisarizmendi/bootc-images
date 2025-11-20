@@ -28,6 +28,10 @@ virsh  net-undefine default
 virsh net-define /etc/libvirt/network/default.xml
 virsh net-start default
 virsh net-autostart default
+mkdir -p /var/lib/libvirt/cloud-init
+virsh pool-define-as --name cloud-init --type dir --target /var/lib/libvirt/cloud-init
+virsh pool-start cloud-init
+virsh pool-autostart cloud-init
 for i in $(ls /etc/libvirt/qemu/*.xml); do virsh define $i ;done
 for i in $(virsh list --all --name); do systemctl start libvirt-vm@${i}.service && systemctl enable libvirt-vm@${i}.service ; virsh autostart $i ; done
 
