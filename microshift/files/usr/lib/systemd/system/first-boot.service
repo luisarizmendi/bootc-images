@@ -5,15 +5,18 @@ Before=network.target
 Wants=network-pre.target
 
 [Service]
-Type=oneshot
+Type=simple
 ExecStart=/usr/local/bin/first-boot.sh
 StandardOutput=journal
 StandardError=journal
 
-# Retry until successful
+# Retry until successful, but only on first boot
 Restart=on-failure
 RestartSec=120
 StartLimitBurst=0
+
+# Only run once during the first boot
+ExecStartPre=/bin/bash -c 'if [ -f /var/lib/firstboot.done ]; then exit 0; fi'
 
 [Install]
 WantedBy=multi-user.target
