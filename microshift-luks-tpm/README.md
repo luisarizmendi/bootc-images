@@ -66,7 +66,7 @@ ls -la artifacts/bootiso/
 
 ## Pre-Build Configuration
 
-2. **Red Hat Edge Manager config**  
+1. **Red Hat Edge Manager config**  
 
     You should include your specific Red Hat Edge manager config file under `/etc/flightctl/config.yaml` before build your image in order to get a fully automated onboarding.
 

@@ -1,6 +1,58 @@
 #!/bin/bash
 set -euo pipefail
 
+# Configurable enrollment check interval (in seconds)
+ENROLLMENT_CHECK_INTERVAL="${ENROLLMENT_CHECK_INTERVAL:-300}"  # Default: 5 minutes
+
+# Extension filtering configuration
+# Blacklist: comma-separated list of extensions to ignore (without the dot)
+# Default includes temporary and backup files
+FILE_MONITOR_BLACKLIST="${FILE_MONITOR_BLACKLIST:-swp,swpx,swx,swo,bak,tmp,temp,~,orig,rej,dpkg-old,dpkg-new,dpkg-dist,rpmsave,rpmnew,new}"
+
+# Whitelist: comma-separated list of extensions to allow (without the dot)
+# Use "*" (default) to allow all extensions (subject to blacklist)
+# If set to specific extensions, only those will be processed
+FILE_MONITOR_WHITELIST="${FILE_MONITOR_WHITELIST:-*}"
+
+## Initial enrollment check
+check_enrollment() {
+    set +e
+    /usr/local/bin/check-enrollment.sh
+    local status=$?
+    set -e
+    return $status
+}
+
+# Check enrollment initially
+if check_enrollment; then
+    echo "Device is already enrolled, stopping."
+    exit 0
+else
+    echo "Device is not enrolled or pending, continuing..."
+fi
+
+#####
+
+# Start periodic enrollment checker in background
+start_enrollment_monitor() {
+    (
+        while true; do
+            sleep "$ENROLLMENT_CHECK_INTERVAL"
+            
+            if check_enrollment; then
+                log "Device has been enrolled. Stopping file monitor service."
+                # Send SIGTERM to main process
+                kill -TERM "$$" 2>/dev/null || true
+                exit 0
+            fi
+        done
+    ) &
+    
+    ENROLLMENT_MONITOR_PID=$!
+    echo "$ENROLLMENT_MONITOR_PID" > "/var/run/file-monitor-enrollment.pid"
+    log "Started enrollment monitor (PID: $ENROLLMENT_MONITOR_PID, checking every ${ENROLLMENT_CHECK_INTERVAL}s)"
+}
+
 CONFIG_PATH="${FILE_MONITOR_CONFIG:-/usr/lib/flightctl/hooks.d/afterupdating/}"
 LOG_FILE="${FILE_MONITOR_LOG:-/var/log/file-monitor.log}"
 PID_FILE="/var/run/file-monitor.pid"
@@ -16,8 +68,84 @@ declare -A PENDING_EVENTS=()
 LOCK_DIR="/var/run/file-monitor-locks"
 mkdir -p "$LOCK_DIR"
 
+# Parse blacklist and whitelist into arrays
+IFS=',' read -ra BLACKLIST_ARRAY <<< "$FILE_MONITOR_BLACKLIST"
+IFS=',' read -ra WHITELIST_ARRAY <<< "$FILE_MONITOR_WHITELIST"
+
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PID:$$] $*" | tee -a "$LOG_FILE"
+}
+
+# Check if a file extension should be processed
+should_process_extension() {
+    local filepath="$1"
+    local filename
+    filename=$(basename "$filepath")
+    
+    # Extract extension (everything after the last dot, lowercase)
+    local ext=""
+    if [[ "$filename" =~ \. ]]; then
+        ext="${filename##*.}"
+        ext="${ext,,}"  # Convert to lowercase
+    fi
+    
+    # Handle special case: files ending with ~ (like file.txt~)
+    if [[ "$filename" =~ ~$ ]]; then
+        log "DEBUG: Skipping file with ~ suffix: $filepath"
+        return 1
+    fi
+    
+    # Check blacklist first
+    if [[ -n "$ext" ]]; then
+        for blacklisted in "${BLACKLIST_ARRAY[@]}"; do
+            blacklisted="${blacklisted,,}"  # Convert to lowercase
+            blacklisted="${blacklisted# }"   # Trim leading space
+            blacklisted="${blacklisted% }"   # Trim trailing space
+            if [[ "$ext" == "$blacklisted" ]]; then
+                log "DEBUG: Skipping blacklisted extension .$ext: $filepath"
+                return 1
+            fi
+        done
+    fi
+    
+    # Check whitelist
+    if [[ "$FILE_MONITOR_WHITELIST" != "*" ]]; then
+        # Whitelist is specific, check if extension is allowed
+        if [[ -z "$ext" ]]; then
+            # No extension, check if empty string is in whitelist
+            local found=0
+            for allowed in "${WHITELIST_ARRAY[@]}"; do
+                allowed="${allowed# }"   # Trim spaces
+                allowed="${allowed% }"
+                if [[ -z "$allowed" ]]; then
+                    found=1
+                    break
+                fi
+            done
+            if [[ $found -eq 0 ]]; then
+                log "DEBUG: File without extension not in whitelist: $filepath"
+                return 1
+            fi
+        else
+            # Check if extension is in whitelist
+            local found=0
+            for allowed in "${WHITELIST_ARRAY[@]}"; do
+                allowed="${allowed,,}"  # Convert to lowercase
+                allowed="${allowed# }"   # Trim spaces
+                allowed="${allowed% }"
+                if [[ "$ext" == "$allowed" ]]; then
+                    found=1
+                    break
+                fi
+            done
+            if [[ $found -eq 0 ]]; then
+                log "DEBUG: Extension .$ext not in whitelist: $filepath"
+                return 1
+            fi
+        fi
+    fi
+    
+    return 0
 }
 
 # Check for required tools
@@ -55,6 +183,8 @@ fi
 
 echo $$ > "$PID_FILE"
 log "Starting file monitor service (max $MAX_PARALLEL parallel jobs, ${DEBOUNCE_TIME}s debounce)"
+log "Extension filtering - Blacklist: $FILE_MONITOR_BLACKLIST"
+log "Extension filtering - Whitelist: $FILE_MONITOR_WHITELIST"
 
 declare -a RULES=()
 
@@ -112,7 +242,8 @@ parse_yaml_config() {
 }
 
 build_monitor_list() {
-    local -A unique_dirs
+    declare -g -A MONITOR_PATHS  # Global: paths to monitor
+    declare -g -A PATH_TYPES      # Global: track if path is file or dir
     
     for rule in "${RULES[@]}"; do
         local if_count
@@ -122,28 +253,73 @@ build_monitor_list() {
             local path
             path=$(echo "$rule" | yq eval ".if[$j].path" -)
             
+            # Remove trailing slash if present
+            path="${path%/}"
+            
+            # Check if path exists
             if [[ ! -e "$path" ]]; then
                 log "WARNING: Path does not exist: $path"
+                # For non-existent paths, determine type by checking if it has an extension or ends with /
+                # If original path had trailing /, it's a directory
+                local original_path
+                original_path=$(echo "$rule" | yq eval ".if[$j].path" -)
+                
+                if [[ "$original_path" =~ /$ ]]; then
+                    # Original had trailing slash, it's a directory - monitor parent
+                    local parent_dir
+                    parent_dir=$(dirname "$path")
+                    if [[ -d "$parent_dir" ]]; then
+                        MONITOR_PATHS["$parent_dir"]=1
+                        PATH_TYPES["$parent_dir"]="dir"
+                        log "DEBUG: Will monitor parent directory: $parent_dir (for future directory $path)"
+                    else
+                        log "WARNING: Parent directory does not exist: $parent_dir"
+                    fi
+                elif [[ "$path" =~ \.[a-zA-Z0-9]+$ ]]; then
+                    # Has file extension, likely a file - monitor parent directory
+                    local parent_dir
+                    parent_dir=$(dirname "$path")
+                    if [[ -d "$parent_dir" ]]; then
+                        MONITOR_PATHS["$parent_dir"]=1
+                        PATH_TYPES["$parent_dir"]="dir"
+                        log "DEBUG: Will monitor parent directory: $parent_dir (for future file $path)"
+                    else
+                        log "WARNING: Parent directory does not exist: $parent_dir"
+                    fi
+                else
+                    # Ambiguous, assume directory - monitor parent
+                    local parent_dir
+                    parent_dir=$(dirname "$path")
+                    if [[ -d "$parent_dir" ]]; then
+                        MONITOR_PATHS["$parent_dir"]=1
+                        PATH_TYPES["$parent_dir"]="dir"
+                        log "DEBUG: Will monitor parent directory: $parent_dir (for future $path)"
+                    else
+                        log "WARNING: Parent directory does not exist: $parent_dir"
+                    fi
+                fi
                 continue
             fi
             
-            # If path is a file, monitor its directory
+            # Track whether this is a file or directory
             if [[ -f "$path" ]]; then
-                path=$(dirname "$path")
+                MONITOR_PATHS["$path"]=1
+                PATH_TYPES["$path"]="file"
+                log "DEBUG: Added file to monitor: $path"
+            elif [[ -d "$path" ]]; then
+                MONITOR_PATHS["$path"]=1
+                PATH_TYPES["$path"]="dir"
+                log "DEBUG: Added directory to monitor: $path"
             fi
-            
-            # Remove trailing slash if present
-            path="${path%/}"
-            unique_dirs["$path"]=1
         done
     done
     
-    if [[ ${#unique_dirs[@]} -eq 0 ]]; then
+    if [[ ${#MONITOR_PATHS[@]} -eq 0 ]]; then
         log "ERROR: No valid paths to monitor"
         exit 1
     fi
     
-    echo "${!unique_dirs[@]}"
+    log "DEBUG: Total paths to monitor: ${#MONITOR_PATHS[@]}"
 }
 
 match_path_condition() {
@@ -156,7 +332,7 @@ match_path_condition() {
     local matches=0
     
     if [[ -d "$condition_path" ]]; then
-        # Directory: check if file is within it
+        # Directory: check if file is within it (recursive)
         local dir_path="${condition_path%/}/"
         if [[ "$fullpath" == "$dir_path"* ]]; then
             matches=1
@@ -240,6 +416,11 @@ execute_action() {
     
     local fullpath="${path}${file}"
     
+    # Check if the file extension should be processed
+    if ! should_process_extension "$fullpath"; then
+        return 0
+    fi
+    
     # Create a unique lock name for this file
     local lock_name
     lock_name=$(echo "$fullpath" | md5sum | cut -d' ' -f1)
@@ -299,6 +480,9 @@ execute_action() {
         for ((j=0; j<if_count; j++)); do
             local condition_path
             condition_path=$(echo "$rule" | yq eval ".if[$j].path" -)
+            
+            # Remove trailing slash
+            condition_path="${condition_path%/}"
             
             local ops
             ops=$(echo "$rule" | yq eval ".if[$j].op | join(\",\")" -)
@@ -401,6 +585,13 @@ execute_action() {
 cleanup() {
     log "Shutting down file monitor service"
     
+    # Stop enrollment monitor
+    if [[ -n "${ENROLLMENT_MONITOR_PID:-}" ]] && kill -0 "$ENROLLMENT_MONITOR_PID" 2>/dev/null; then
+        kill "$ENROLLMENT_MONITOR_PID" 2>/dev/null || true
+        wait "$ENROLLMENT_MONITOR_PID" 2>/dev/null || true
+    fi
+    rm -f "/var/run/file-monitor-enrollment.pid"
+    
     # Wait for all background jobs to complete
     log "Waiting for ${#JOB_PIDS[@]} background jobs to complete..."
     for pid in "${!JOB_PIDS[@]}"; do
@@ -424,18 +615,95 @@ main() {
     
     log "Parsed ${#RULES[@]} rules"
     
-    local monitor_dirs
-    monitor_dirs=$(build_monitor_list)
-    log "Monitoring directories: $monitor_dirs"
+    log "DEBUG: Building monitor list..."
+    build_monitor_list
+    log "DEBUG: Monitor list built, found ${#MONITOR_PATHS[@]} paths"
+    
+    # Start the enrollment monitor
+    start_enrollment_monitor
+    
+    # Separate files and directories
+    local monitor_files=()
+    local monitor_dirs=()
+    
+    for path in "${!MONITOR_PATHS[@]}"; do
+        log "DEBUG: Processing path: $path (type: ${PATH_TYPES[$path]})"
+        if [[ "${PATH_TYPES[$path]}" == "file" ]]; then
+            monitor_files+=("$path")
+        else
+            monitor_dirs+=("$path")
+        fi
+    done
+    
+    log "DEBUG: Separated into ${#monitor_files[@]} files and ${#monitor_dirs[@]} directories"
+    
+    if [[ ${#monitor_files[@]} -gt 0 ]]; then
+        log "Monitoring files: ${monitor_files[*]}"
+    fi
+    if [[ ${#monitor_dirs[@]} -gt 0 ]]; then
+        log "Monitoring directories (recursive): ${monitor_dirs[*]}"
+    fi
+    
+    if [[ ${#monitor_files[@]} -eq 0 && ${#monitor_dirs[@]} -eq 0 ]]; then
+        log "ERROR: No paths to monitor after processing"
+        exit 1
+    fi
+    
+    # Build inotifywait command
+    local inotify_args=()
+    
+    # Add files (non-recursive)
+    for file in "${monitor_files[@]}"; do
+        inotify_args+=("$file")
+    done
+    
+    # Add directories (recursive)
+    local recursive_flag=""
+    if [[ ${#monitor_dirs[@]} -gt 0 ]]; then
+        recursive_flag="-r"
+    fi
     
     while true; do
-        inotifywait -m -r -e modify,create,delete,move,attrib \
-            --format '%w|%e|%f' \
-            $monitor_dirs 2>>"$LOG_FILE" | \
-        while IFS='|' read -r path event file; do
-            # Process events immediately without blocking
-            execute_action "$path" "$event" "$file"
-        done
+        if [[ ${#monitor_files[@]} -gt 0 && ${#monitor_dirs[@]} -gt 0 ]]; then
+            # Monitor both files and directories
+            # Use two separate inotifywait processes and merge output
+            {
+                inotifywait -m -e modify,create,delete,move \
+                    --format '%w|%e|%f' \
+                    "${monitor_files[@]}" 2>>"$LOG_FILE" &
+                local files_pid=$!
+                
+                inotifywait -m -r -e modify,create,delete,move \
+                    --format '%w|%e|%f' \
+                    "${monitor_dirs[@]}" 2>>"$LOG_FILE" &
+                local dirs_pid=$!
+                
+                # Wait for either to exit
+                wait -n
+                
+                # Kill both
+                kill $files_pid $dirs_pid 2>/dev/null || true
+                wait
+            } | while IFS='|' read -r path event file; do
+                execute_action "$path" "$event" "$file"
+            done
+        elif [[ ${#monitor_files[@]} -gt 0 ]]; then
+            # Only files
+            inotifywait -m -e modify,create,delete,move \
+                --format '%w|%e|%f' \
+                "${monitor_files[@]}" 2>>"$LOG_FILE" | \
+            while IFS='|' read -r path event file; do
+                execute_action "$path" "$event" "$file"
+            done
+        else
+            # Only directories
+            inotifywait -m -r -e modify,create,delete,move \
+                --format '%w|%e|%f' \
+                "${monitor_dirs[@]}" 2>>"$LOG_FILE" | \
+            while IFS='|' read -r path event file; do
+                execute_action "$path" "$event" "$file"
+            done
+        fi
         
         log "WARNING: inotifywait exited, restarting in 5 seconds..."
         sleep 5
