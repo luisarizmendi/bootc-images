@@ -56,13 +56,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Define blacklisted files (case-insensitive patterns)
-          # These files will not trigger a build when they are the only changes
-          BLACKLISTED_FILES=(
-            ".buildconfig"
-            "readme.md"
-          )
-
           # Inputs or defaults
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PLATFORMS="${{ github.event.inputs.platforms }}"
@@ -88,20 +81,6 @@ jobs:
 
           echo "Building for platforms: $PLATFORMS"
           echo "Building formats: $FORMATS"
-
-          # Function to check if a filename matches any blacklisted pattern (case-insensitive)
-          is_blacklisted() {
-            local filename="$1"
-            local basename_lower=$(basename "$filename" | tr '[:upper:]' '[:lower:]')
-            
-            for pattern in "${BLACKLISTED_FILES[@]}"; do
-              pattern_lower=$(echo "$pattern" | tr '[:upper:]' '[:lower:]')
-              if [ "$basename_lower" = "$pattern_lower" ]; then
-                return 0  # File is blacklisted
-              fi
-            done
-            return 1  # File is not blacklisted
-          }
 
           # Function to get allowed platforms for a directory
           get_allowed_platforms() {
@@ -194,7 +173,7 @@ jobs:
             echo "false"
           }
 
-          # Function to check if only blacklisted files changed in a directory
+          # Function to check if only .buildconfig changed in a directory
           directory_has_substantial_changes() {
             local dir="$1"
             local before="$2"
@@ -213,17 +192,11 @@ jobs:
               return 1
             fi
             
-            # Check if any non-blacklisted file changed
-            local has_non_blacklisted=false
-            while IFS= read -r changed_file; do
-              if ! is_blacklisted "$changed_file"; then
-                has_non_blacklisted=true
-                break
-              fi
-            done <<< "$dir_changes"
+            # Check if any file other than .buildconfig changed
+            local non_buildconfig_changes=$(echo "$dir_changes" | grep -v "^${dir}/\.buildconfig$" || echo "")
             
-            if [ "$has_non_blacklisted" = false ]; then
-              echo "Directory $dir: Only blacklisted files changed (${BLACKLISTED_FILES[*]}), skipping build"
+            if [ -z "$non_buildconfig_changes" ]; then
+              echo "Directory $dir: Only .buildconfig changed, skipping build"
               return 1
             fi
             
@@ -301,7 +274,7 @@ jobs:
           BUILD_IMAGE_NAMES=()
           for d in $CHANGED_DIRS; do
             if [ -f "$d/Containerfile" ]; then
-              # For push events, check if only blacklisted files changed
+              # For push events, check if only .buildconfig changed
               if [ "${{ github.event_name }}" = "push" ]; then
                 if directory_has_substantial_changes "$d" "$BEFORE" "$AFTER"; then
                   BUILD_DIRS+=("$d")
@@ -309,7 +282,7 @@ jobs:
                   BUILD_IMAGE_NAMES+=("$IMAGE_NAME")
                   echo "Will build: $d (image name: $IMAGE_NAME)"
                 else
-                  echo "Skipping $d (only blacklisted files changed)"
+                  echo "Skipping $d (only .buildconfig changed)"
                 fi
               else
                 # For manual runs, always include
@@ -558,12 +531,6 @@ jobs:
           EXISTING_TAGS=""
           if skopeo list-tags "docker://${IMAGE_BASE}" >/tmp/tags.json 2>/dev/null; then
             EXISTING_TAGS=$(jq -r '.Tags[]' /tmp/tags.json 2>/dev/null | \
-              grep -oE '^v[0-9]+"
-
-          # Get existing tags from the registry using skopeo
-          EXISTING_TAGS=""
-          if skopeo list-tags "docker://${IMAGE_BASE}" >/tmp/tags.json 2>/dev/null; then
-            EXISTING_TAGS=$(jq -r '.Tags[]' /tmp/tags.json 2>/dev/null | \
               grep -oE '^v[0-9]+$' | \
               sort -V || echo "")
             echo "Found existing tags: $EXISTING_TAGS"
@@ -718,7 +685,13 @@ jobs:
           KEEP_VERSION="${{ matrix.keep_version }}"
 
           echo "Determining version for: $IMAGE_BASE"
-          echo "Keep version setting: $KEEP_VERSION | \
+          echo "Keep version setting: $KEEP_VERSION"
+
+          # Get existing tags from the registry using skopeo
+          EXISTING_TAGS=""
+          if skopeo list-tags "docker://${IMAGE_BASE}" >/tmp/tags.json 2>/dev/null; then
+            EXISTING_TAGS=$(jq -r '.Tags[]' /tmp/tags.json 2>/dev/null | \
+              grep -oE '^v[0-9]+$' | \
               sort -V || echo "")
             echo "Found existing tags: $EXISTING_TAGS"
           else
@@ -1272,7 +1245,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Configuration Notes" >> "$GITHUB_STEP_SUMMARY"
           echo "- Only directories with a Containerfile that changed (or whose contents changed) are built." >> "$GITHUB_STEP_SUMMARY"
-          echo "- Directories where only blacklisted files (.buildconfig, README.md) changed are skipped." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Directories where only .buildconfig changed are skipped." >> "$GITHUB_STEP_SUMMARY"
           echo "- Deleted directories are ignored gracefully (no build attempted)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Version tags are created as vN (and vN-<arch> for platform images)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Platform restrictions can be specified using a \`.buildconfig\` file in each directory." >> "$GITHUB_STEP_SUMMARY"
@@ -1282,164 +1255,4 @@ jobs:
           echo "- \`platforms: linux/amd64,linux/arm64\` - Restrict platforms for both bootc images and artifacts (default: linux/amd64,linux/arm64)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`artifacts: true|false|auto\` - Enable/disable artifact creation (default: auto - create if none exist)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`artifact_formats: anaconda-iso,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY""
-
-          # Get existing tags from the registry using skopeo
-          EXISTING_TAGS=""
-          if skopeo list-tags "docker://${IMAGE_BASE}" >/tmp/tags.json 2>/dev/null; then
-            EXISTING_TAGS=$(jq -r '.Tags[]' /tmp/tags.json 2>/dev/null | \
-              grep -oE '^v[0-9]+$' | \
-              sort -V || echo "")
-            echo "Found existing tags: $EXISTING_TAGS"
-          else
-            echo "No existing tags found or repository doesn't exist yet"
-          fi
-
-          if [ -z "$EXISTING_TAGS" ]; then
-            echo "No existing version tags found, starting with v1"
-            NEXT_TAG="v1"
-          else
-            # Find the highest version number
-            HIGHEST_VERSION=$(echo "$EXISTING_TAGS" | tail -n1)
-            
-            if [ "$KEEP_VERSION" = "true" ]; then
-              # Keep the existing version
-              NEXT_TAG="$HIGHEST_VERSION"
-              echo "Keeping existing version: $NEXT_TAG (keep_version=true)"
-            else
-              # Increment the version
-              HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
-              NEXT_NUM=$((HIGHEST_NUM + 1))
-              NEXT_TAG="v${NEXT_NUM}"
-              echo "Highest existing version: $HIGHEST_VERSION, next version: $NEXT_TAG"
-            fi
-          fi
-
-          echo "NEXT_TAG=$NEXT_TAG" | tee -a "$GITHUB_ENV"
-          echo "next=$NEXT_TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Build platform-specific image with Buildah
-        id: build
-        uses: redhat-actions/buildah-build@v2
-        with:
-          image: ${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.image_name }}
-          tags: |
-            latest-${{ matrix.arch }}
-            ${{ github.sha }}-${{ matrix.arch }}
-            ${{ steps.version.outputs.next }}-${{ matrix.arch }}
-          platforms: ${{ matrix.platform }}
-          context: ./${{ matrix.dir }}
-          containerfiles: |
-            ./${{ matrix.dir }}/Containerfile
-
-      - name: Log in to GitHub Container Registry
-        uses: redhat-actions/podman-login@v1
-        with:
-          registry: ${{ env.DEST_REGISTRY_HOST }}
-          username: ${{ env.DEST_REGISTRY_USER }}
-          password: ${{ env.DEST_REGISTRY_PASSWORD }}
-          auth_file_path: /run/containers/0/auth.json
-
-      - name: Push platform-specific image to GHCR
-        id: push
-        uses: redhat-actions/push-to-registry@v2
-        with:
-          image: ${{ steps.build.outputs.image }}
-          tags: ${{ steps.build.outputs.tags }}
-          registry: ${{ env.DEST_REGISTRY_HOST }}
-
-      - name: Clean up the subscription
-        if: always()
-        run: subscription-manager unregister
-
-# Matrix job: Build installable artifacts for each (directory, platform, format)
-  build-artifacts:
-    name: Build ${{ matrix.image_name }} artifacts (${{ matrix.arch }}, ${{ matrix.format }})
-    needs: [setup, build-image]
-    if: needs.setup.outputs.has_artifacts == 'true'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.setup.outputs.artifact_matrix) }}
-    runs-on: ${{ matrix.runner }}
-    env:
-      # Disable Subscription Manager container passthrough
-      SMDEV_CONTAINER_OFF: 1
-      # Destination registry configuration
-      DEST_REGISTRY_HOST: "${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}"
-      DEST_REGISTRY_USER: "${{ vars.DEST_REGISTRY_USER || github.repository_owner }}"
-      DEST_REGISTRY_PASSWORD: "${{ secrets.DEST_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}"
-    container:
-      image: registry.access.redhat.com/ubi9/ubi
-      options: --privileged --user root -v /mnt:/mnt
-    permissions:
-      contents: write
-      packages: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Get container tools in UBI builder
-        run: |
-          dnf -y install podman buildah skopeo jq 
-          dnf clean all
-
-      - name: Setup output directory
-        run: |
-          set -euo pipefail
-          
-          # Show what we have
-          echo "=== /mnt contents ==="
-          ls -la /mnt || true
-          
-          # Try to create output directory, fall back to /var/tmp if /mnt fails
-          if mkdir -p /mnt/output 2>/dev/null; then
-            echo "Successfully created output directory in /mnt"
-            OUTPUT_DIR="/mnt/output"
-          else
-            echo "Cannot write to /mnt, using /var/tmp instead"
-            mkdir -p /var/tmp/output
-            OUTPUT_DIR="/var/tmp/output"
-          fi
-          
-          # Export for later steps
-          echo "OUTPUT_DIR=$OUTPUT_DIR" >> $GITHUB_ENV
-          echo "Using output directory: $OUTPUT_DIR"
-
-      - name: Register with Red Hat subscription manager
-        run: |
-          if [ -n "${{ secrets.RHT_ORGID }}" ] && [ -n "${{ secrets.RHT_ACT_KEY }}" ]; then
-            echo "Registering with organization ID and activation key..."
-            subscription-manager register --org=${{ secrets.RHT_ORGID }} --activationkey=${{ secrets.RHT_ACT_KEY }}
-          else
-            echo "Registering with username and password..."
-            subscription-manager register --username=${{ secrets.RH_USERNAME }} --password=${{ secrets.RH_PASSWORD }}
-          fi
-
-      # workaround for https://github.com/redhat-actions/podman-login/issues/42
-      - name: Workaround open podman-login action issue
-        env:
-          auth: "{ \"auths\": {} }"
-        run: |
-          mkdir -p $HOME/.docker
-          echo "$auth" > $HOME/.docker/config.json
-
-      - name: Log in to GitHub Container Registry
-        uses: redhat-actions/podman-login@v1
-        with:
-          registry: ${{ env.DEST_REGISTRY_HOST }}
-          username: ${{ env.DEST_REGISTRY_USER }}
-          password: ${{ env.DEST_REGISTRY_PASSWORD }}
-          auth_file_path: /run/containers/0/auth.json
-
-      - name: Determine image version
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          IMAGE_NAME="bootc-${{ matrix.image_name }}"
-          IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${IMAGE_NAME}"
-          KEEP_VERSION="${{ matrix.keep_version }}"
-
-          echo "Determining version for: $IMAGE_BASE"
-          echo "Keep version setting: $KEEP_VERSION
+          echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY"
