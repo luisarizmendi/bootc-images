@@ -8,6 +8,7 @@
 # - selinux_context: SELinux security context (optional)
 # - force: Set to true to force re-download even if file exists (optional, default: false)
 
+
 files:
     # test-vm disk
   - type: https
