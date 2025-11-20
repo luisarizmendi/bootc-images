@@ -56,6 +56,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Define blacklisted files (case-insensitive patterns)
+          # These files will not trigger a build when they are the only changes
+          BLACKLISTED_FILES=(
+            ".buildconfig"
+            "readme.md"
+          )
+
           # Inputs or defaults
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PLATFORMS="${{ github.event.inputs.platforms }}"
@@ -81,6 +88,20 @@ jobs:
 
           echo "Building for platforms: $PLATFORMS"
           echo "Building formats: $FORMATS"
+
+          # Function to check if a filename matches any blacklisted pattern (case-insensitive)
+          is_blacklisted() {
+            local filename="$1"
+            local basename_lower=$(basename "$filename" | tr '[:upper:]' '[:lower:]')
+            
+            for pattern in "${BLACKLISTED_FILES[@]}"; do
+              pattern_lower=$(echo "$pattern" | tr '[:upper:]' '[:lower:]')
+              if [ "$basename_lower" = "$pattern_lower" ]; then
+                return 0  # File is blacklisted
+              fi
+            done
+            return 1  # File is not blacklisted
+          }
 
           # Function to get allowed platforms for a directory
           get_allowed_platforms() {
@@ -173,7 +194,7 @@ jobs:
             echo "false"
           }
 
-          # Function to check if only .buildconfig changed in a directory
+          # Function to check if only blacklisted files changed in a directory
           directory_has_substantial_changes() {
             local dir="$1"
             local before="$2"
@@ -192,11 +213,17 @@ jobs:
               return 1
             fi
             
-            # Check if any file other than .buildconfig changed
-            local non_buildconfig_changes=$(echo "$dir_changes" | grep -v "^${dir}/\.buildconfig$" || echo "")
+            # Check if any non-blacklisted file changed
+            local has_non_blacklisted=false
+            while IFS= read -r changed_file; do
+              if ! is_blacklisted "$changed_file"; then
+                has_non_blacklisted=true
+                break
+              fi
+            done <<< "$dir_changes"
             
-            if [ -z "$non_buildconfig_changes" ]; then
-              echo "Directory $dir: Only .buildconfig changed, skipping build"
+            if [ "$has_non_blacklisted" = false ]; then
+              echo "Directory $dir: Only blacklisted files changed (${BLACKLISTED_FILES[*]}), skipping build"
               return 1
             fi
             
@@ -274,7 +301,7 @@ jobs:
           BUILD_IMAGE_NAMES=()
           for d in $CHANGED_DIRS; do
             if [ -f "$d/Containerfile" ]; then
-              # For push events, check if only .buildconfig changed
+              # For push events, check if only blacklisted files changed
               if [ "${{ github.event_name }}" = "push" ]; then
                 if directory_has_substantial_changes "$d" "$BEFORE" "$AFTER"; then
                   BUILD_DIRS+=("$d")
@@ -282,7 +309,7 @@ jobs:
                   BUILD_IMAGE_NAMES+=("$IMAGE_NAME")
                   echo "Will build: $d (image name: $IMAGE_NAME)"
                 else
-                  echo "Skipping $d (only .buildconfig changed)"
+                  echo "Skipping $d (only blacklisted files changed)"
                 fi
               else
                 # For manual runs, always include
@@ -466,12 +493,8 @@ jobs:
       image: ${{ steps.build.outputs.image }}
       tags: ${{ steps.build.outputs.tags }}
     env:
-      # Disable Subscription Manager container passthrough
       SMDEV_CONTAINER_OFF: 1
-      # Source registry for base image
       SOURCE_REGISTRY_HOST: "registry.redhat.io"
-
-      # Destination registry configuration (image name will be per-directory)
       DEST_REGISTRY_HOST: "${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}"
       DEST_REGISTRY_USER: "${{ vars.DEST_REGISTRY_USER || github.repository_owner }}"
       DEST_REGISTRY_PASSWORD: "${{ secrets.DEST_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}"
@@ -498,7 +521,6 @@ jobs:
             subscription-manager register --username=${{ secrets.RH_USERNAME }} --password=${{ secrets.RH_PASSWORD }}
           fi
 
-      # workaround for https://github.com/redhat-actions/podman-login/issues/42
       - name: Workaround open podman-login action issue
         env:
           auth: "{ \"auths\": {} }"
@@ -527,7 +549,6 @@ jobs:
           echo "Determining version for: $IMAGE_BASE"
           echo "Keep version setting: $KEEP_VERSION"
 
-          # Get existing tags from the registry using skopeo
           EXISTING_TAGS=""
           if skopeo list-tags "docker://${IMAGE_BASE}" >/tmp/tags.json 2>/dev/null; then
             EXISTING_TAGS=$(jq -r '.Tags[]' /tmp/tags.json 2>/dev/null | \
@@ -542,15 +563,12 @@ jobs:
             echo "No existing version tags found, starting with v1"
             NEXT_TAG="v1"
           else
-            # Find the highest version number
             HIGHEST_VERSION=$(echo "$EXISTING_TAGS" | tail -n1)
             
             if [ "$KEEP_VERSION" = "true" ]; then
-              # Keep the existing version
               NEXT_TAG="$HIGHEST_VERSION"
               echo "Keeping existing version: $NEXT_TAG (keep_version=true)"
             else
-              # Increment the version
               HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
               NEXT_NUM=$((HIGHEST_NUM + 1))
               NEXT_TAG="v${NEXT_NUM}"
@@ -595,7 +613,7 @@ jobs:
         if: always()
         run: subscription-manager unregister
 
-# Matrix job: Build installable artifacts for each (directory, platform, format)
+  # Matrix job: Build installable artifacts for each (directory, platform, format)
   build-artifacts:
     name: Build ${{ matrix.image_name }} artifacts (${{ matrix.arch }}, ${{ matrix.format }})
     needs: [setup, build-image]
@@ -605,9 +623,7 @@ jobs:
       matrix: ${{ fromJson(needs.setup.outputs.artifact_matrix) }}
     runs-on: ${{ matrix.runner }}
     env:
-      # Disable Subscription Manager container passthrough
       SMDEV_CONTAINER_OFF: 1
-      # Destination registry configuration
       DEST_REGISTRY_HOST: "${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}"
       DEST_REGISTRY_USER: "${{ vars.DEST_REGISTRY_USER || github.repository_owner }}"
       DEST_REGISTRY_PASSWORD: "${{ secrets.DEST_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}"
@@ -630,11 +646,9 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Show what we have
           echo "=== /mnt contents ==="
           ls -la /mnt || true
           
-          # Try to create output directory, fall back to /var/tmp if /mnt fails
           if mkdir -p /mnt/output 2>/dev/null; then
             echo "Successfully created output directory in /mnt"
             OUTPUT_DIR="/mnt/output"
@@ -644,7 +658,6 @@ jobs:
             OUTPUT_DIR="/var/tmp/output"
           fi
           
-          # Export for later steps
           echo "OUTPUT_DIR=$OUTPUT_DIR" >> $GITHUB_ENV
           echo "Using output directory: $OUTPUT_DIR"
 
@@ -658,7 +671,6 @@ jobs:
             subscription-manager register --username=${{ secrets.RH_USERNAME }} --password=${{ secrets.RH_PASSWORD }}
           fi
 
-      # workaround for https://github.com/redhat-actions/podman-login/issues/42
       - name: Workaround open podman-login action issue
         env:
           auth: "{ \"auths\": {} }"
@@ -687,7 +699,6 @@ jobs:
           echo "Determining version for: $IMAGE_BASE"
           echo "Keep version setting: $KEEP_VERSION"
 
-          # Get existing tags from the registry using skopeo
           EXISTING_TAGS=""
           if skopeo list-tags "docker://${IMAGE_BASE}" >/tmp/tags.json 2>/dev/null; then
             EXISTING_TAGS=$(jq -r '.Tags[]' /tmp/tags.json 2>/dev/null | \
@@ -702,15 +713,12 @@ jobs:
             echo "No existing version tags found, starting with v1"
             CURRENT_TAG="v1"
           else
-            # Find the highest version number - this should be the one just built
             HIGHEST_VERSION=$(echo "$EXISTING_TAGS" | tail -n1)
             
             if [ "$KEEP_VERSION" = "true" ]; then
-              # Use the existing version
               CURRENT_TAG="$HIGHEST_VERSION"
               echo "Using existing version: $CURRENT_TAG (keep_version=true)"
             else
-              # Check if platform-specific tag exists for incremented version
               HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
               INCREMENTED_VERSION="v$((HIGHEST_NUM + 1))"
 
@@ -748,10 +756,8 @@ jobs:
           IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.image_name }}:latest-${{ matrix.arch }}"
           
           echo "Using output directory: $OUTPUT_DIR"
-
           echo "Creating ${{ matrix.format }} artifact for $IMAGE"
 
-          # Check if config.toml exists in the directory
           CONFIG_MOUNT=""
           if [ -f "./${{ matrix.dir }}/config.toml" ]; then
             echo "Found config.toml for ${{ matrix.dir }}, will mount it"
@@ -760,7 +766,6 @@ jobs:
             echo "No config.toml found for ${{ matrix.dir }}, proceeding without custom configuration"
           fi
 
-          # Run bootc-image-builder - using default storage, only mount output
           podman run \
             --rm \
             --privileged \
@@ -774,11 +779,9 @@ jobs:
             --use-librepo=True \
             "$IMAGE"
 
-          # List created files
           echo "Created artifacts:"
           ls -la ${OUTPUT_DIR}/
 
-          # Verify we have the expected output
           if [ ! "$(ls -A ${OUTPUT_DIR}/)" ]; then
             echo "ERROR: No artifacts were created!"
             exit 1
@@ -807,7 +810,6 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Try to create storage directory in /mnt
           if mkdir -p /mnt/containers/storage 2>/dev/null; then
             echo "Successfully created storage directory in /mnt"
             STORAGE_ROOT="/mnt/containers/storage"
@@ -817,13 +819,10 @@ jobs:
             STORAGE_ROOT="/var/tmp/containers/storage"
           fi
           
-          # Export for later steps
           echo "STORAGE_ROOT=$STORAGE_ROOT" >> $GITHUB_ENV
           
-          # Reset podman storage
           podman system reset -f || true
           
-          # Configure container storage for scratch image build
           mkdir -p /etc/containers
           cat > /etc/containers/storage.conf << EOF
           [storage]
@@ -841,7 +840,6 @@ jobs:
           echo "=== Storage configuration ==="
           cat /etc/containers/storage.conf
           
-          # Verify the configuration
           podman info | grep -A 5 "graphRoot"
 
       - name: Create scratch container image with artifact
@@ -855,13 +853,11 @@ jobs:
           echo "Creating scratch image: $ARTIFACT_IMAGE_NAME:$ARTIFACT_IMAGE_TAG"
           echo "Using storage root: $STORAGE_ROOT"
 
-          # Create a simple Containerfile for the scratch image
           cat > /tmp/Containerfile.artifact << 'EOF'
           FROM scratch
           COPY ${OUTPUT_DIR}/ /
           EOF
 
-          # Build the scratch image containing the artifacts
           cd ${OUTPUT_DIR}
           buildah bud \
             --tag "$ARTIFACT_IMAGE_NAME:$ARTIFACT_IMAGE_TAG" \
@@ -889,7 +885,6 @@ jobs:
       - name: Clean up the subscription
         if: always()
         run: subscription-manager unregister
-
 
   # Job: Create multi-platform manifests for each changed directory
   create-manifest:
@@ -922,13 +917,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Function to get allowed platforms for a directory
           get_allowed_platforms() {
             local dir="$1"
             local default_platforms="$2"
 
             if [ -f "$dir/.buildconfig" ]; then
-              # Parse .buildconfig file for platforms
               local config_platforms=$(grep -E '^platforms\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^platforms\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' ')
               if [ -n "$config_platforms" ]; then
                 echo "$config_platforms"
@@ -936,11 +929,9 @@ jobs:
               fi
             fi
 
-            # Return default platforms if no restriction found
             echo "$default_platforms"
           }
 
-          # Function to get keep_version setting for a directory
           get_keep_version() {
             local dir="$1"
 
@@ -952,24 +943,19 @@ jobs:
               fi
             fi
 
-            # Default to false
             echo "false"
           }
 
-          # Function to extract image name from full path
           get_image_name() {
             local full_path="$1"
-            # Get the last component of the path
             echo "$(basename "$full_path")"
           }
 
           IFS=',' read -ra GLOBAL_PLATFORM_ARRAY <<< "${{ needs.setup.outputs.platforms }}"
 
-          # Iterate directories detected in setup (JSON array)
           DIRS_JSON='${{ needs.setup.outputs.dirs }}'
           echo "Directories to process: $DIRS_JSON"
 
-          # Convert JSON array to bash array
           DIRS_CLEAN=$(echo "$DIRS_JSON" | sed 's/\[//g; s/\]//g; s/"//g')
           IFS=',' read -ra DIRS <<< "$DIRS_CLEAN"
 
@@ -979,20 +965,16 @@ jobs:
 
             echo "\n=== Processing bootc-$IMAGE_NAME (from $DIR) ==="
 
-            # Get allowed platforms for this directory
             ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
             echo "Directory $DIR platforms: $ALLOWED_PLATFORMS"
 
-            # Get keep_version setting
             KEEP_VERSION=$(get_keep_version "$DIR")
             echo "Directory $DIR keep_version: $KEEP_VERSION"
 
-            # Filter allowed platforms to only include those that were actually built
             IFS=',' read -ra ALLOWED_PLATFORM_ARRAY <<< "$ALLOWED_PLATFORMS"
             BUILT_PLATFORMS=()
 
             for PLATFORM in "${ALLOWED_PLATFORM_ARRAY[@]}"; do
-              # Check if this platform is in the global platform list
               PLATFORM_FOUND=false
               for GLOBAL_PLATFORM in "${GLOBAL_PLATFORM_ARRAY[@]}"; do
                 if [ "$PLATFORM" = "$GLOBAL_PLATFORM" ]; then
@@ -1013,11 +995,8 @@ jobs:
 
             echo "Creating manifests for platforms: ${BUILT_PLATFORMS[*]}"
 
-            # Compute the SAME version that was used in the build step
-            # This must match exactly what the build step computed
             EXISTING_TAGS=""
             if skopeo list-tags "docker://${IMAGE_BASE}" >/tmp/tags.json 2>/dev/null; then
-              # Filter out platform-specific tags to get only base version tags
               EXISTING_TAGS=$(jq -r '.Tags[]' /tmp/tags.json 2>/dev/null | \
                 grep -oE '^v[0-9]+' | sort -V || echo "")
               echo "Found existing base version tags: $EXISTING_TAGS"
@@ -1029,15 +1008,12 @@ jobs:
               echo "No existing version tags found, using v1"
               VERSION_TAG="v1"
             else
-              # Find the highest version number - this should be the one just built
               HIGHEST_VERSION=$(echo "$EXISTING_TAGS" | tail -n1)
               
               if [ "$KEEP_VERSION" = "true" ]; then
-                # Keep the existing version
                 VERSION_TAG="$HIGHEST_VERSION"
                 echo "Using existing version: $VERSION_TAG (keep_version=true)"
               else
-                # Check if the platform-specific tags exist for the next version
                 HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
                 NEXT_VERSION="v$((HIGHEST_NUM + 1))"
                 PLATFORM_CHECK="${BUILT_PLATFORMS[0]#linux/}"
@@ -1052,18 +1028,15 @@ jobs:
               fi
             fi
 
-            # Create manifests for each tag type
             for TAG_TYPE in "latest" "${{ github.sha }}" "$VERSION_TAG"; do
               echo "Creating manifest for $IMAGE_BASE:$TAG_TYPE"
 
-              # Build the manifest create command
               MANIFEST_IMAGES=()
               for PLATFORM in "${BUILT_PLATFORMS[@]}"; do
                 ARCH="${PLATFORM#linux/}"
                 MANIFEST_IMAGES+=("$IMAGE_BASE:$TAG_TYPE-$ARCH")
               done
 
-              # Create and push the manifest
               podman manifest create "$IMAGE_BASE:$TAG_TYPE"
               for MANIFEST_IMAGE in "${MANIFEST_IMAGES[@]}"; do
                 echo "Adding $MANIFEST_IMAGE to manifest"
@@ -1073,7 +1046,6 @@ jobs:
               echo "Pushing manifest $IMAGE_BASE:$TAG_TYPE"
               podman manifest push "$IMAGE_BASE:$TAG_TYPE" "docker://$IMAGE_BASE:$TAG_TYPE"
 
-              # Clean up local manifest
               podman manifest rm "$IMAGE_BASE:$TAG_TYPE" || true
             done
           done
@@ -1094,13 +1066,11 @@ jobs:
       - name: Print build summary
         shell: bash
         run: |
-          # Function to get allowed platforms for a directory
           get_allowed_platforms() {
             local dir="$1"
             local default_platforms="$2"
 
             if [ -f "$dir/.buildconfig" ]; then
-              # Parse .buildconfig file for platforms
               local config_platforms=$(grep -E '^platforms\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^platforms\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' ')
               if [ -n "$config_platforms" ]; then
                 echo "$config_platforms"
@@ -1108,11 +1078,9 @@ jobs:
               fi
             fi
 
-            # Return default platforms if no restriction found
             echo "$default_platforms"
           }
 
-          # Function to get keep_version setting for a directory
           get_keep_version() {
             local dir="$1"
 
@@ -1124,11 +1092,9 @@ jobs:
               fi
             fi
 
-            # Default to false
             echo "false"
           }
 
-          # Function to get artifact configuration for a directory
           get_artifact_config() {
             local dir="$1"
             local default_formats="${{ needs.setup.outputs.formats }}"
@@ -1141,7 +1107,6 @@ jobs:
               artifact_formats=$(grep -E '^artifact_formats\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^artifact_formats\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' ' || echo "")
             fi
 
-            # Set default for artifacts if not specified
             if [ -z "$create_artifacts" ]; then
               create_artifacts="auto"
             fi
@@ -1149,10 +1114,8 @@ jobs:
             echo "$create_artifacts,$artifact_formats"
           }
 
-          # Function to extract image name from full path
           get_image_name() {
             local full_path="$1"
-            # Get the last component of the path
             echo "$(basename "$full_path")"
           }
 
@@ -1174,7 +1137,6 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           DIRS_JSON='${{ needs.setup.outputs.dirs }}'
-          # Remove brackets and quotes, split by comma
           DIRS_CLEAN=$(echo "$DIRS_JSON" | sed 's/\[//g; s/\]//g; s/"//g')
           IFS=',' read -ra DIRS <<< "$DIRS_CLEAN"
 
@@ -1208,20 +1170,11 @@ jobs:
           if [ "${{ needs.setup.outputs.has_artifacts }}" = "true" ]; then
             echo "### Installable Artifacts Built" >> "$GITHUB_STEP_SUMMARY"
 
-            # Parse the artifact matrix to show what was built
             ARTIFACT_MATRIX_JSON='${{ needs.setup.outputs.artifact_matrix }}'
 
-            # Group by directory and show formats/platforms
             for DIR in "${DIRS[@]}"; do
               IMAGE_NAME=$(get_image_name "$DIR")
-              ARTIFACT_CONFIG=$(get_artifact_config "$DIR" "$FORMATS" "$ALLOWED_PLATFORMS")
-              IFS='|' read -ra CONFIG_PARTS <<< "$ARTIFACT_CONFIG"
-              CREATE_ARTIFACTS="${CONFIG_PARTS[0]}"
-              ARTIFACT_FORMATS="${CONFIG_PARTS[1]:-$FORMATS}"
-              ARTIFACT_PLATFORMS="${CONFIG_PARTS[2]}"
 
-
-              # Check if this directory has artifacts in the matrix
               DIR_FORMATS=$(echo "$ARTIFACT_MATRIX_JSON" | jq -r --arg dir "$DIR" '.include[] | select(.dir == $dir) | .format' | sort -u | tr '\n' ',' | sed 's/,$//')
               DIR_PLATFORMS=$(echo "$ARTIFACT_MATRIX_JSON" | jq -r --arg dir "$DIR" '.include[] | select(.dir == $dir) | .platform' | sort -u | tr '\n' ',' | sed 's/,$//')
 
@@ -1230,7 +1183,6 @@ jobs:
                 echo "  - **Formats**: $DIR_FORMATS" >> "$GITHUB_STEP_SUMMARY"
                 echo "  - **Platforms**: $DIR_PLATFORMS" >> "$GITHUB_STEP_SUMMARY"
 
-                # List the artifact images
                 IFS=',' read -ra FORMAT_ARRAY <<< "$DIR_FORMATS"
                 for FORMAT in "${FORMAT_ARRAY[@]}"; do
                   echo "  - **Image**: \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$IMAGE_NAME-$FORMAT:{latest | vN}\`" >> "$GITHUB_STEP_SUMMARY"
@@ -1245,7 +1197,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Configuration Notes" >> "$GITHUB_STEP_SUMMARY"
           echo "- Only directories with a Containerfile that changed (or whose contents changed) are built." >> "$GITHUB_STEP_SUMMARY"
-          echo "- Directories where only .buildconfig changed are skipped." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Directories where only blacklisted files (.buildconfig, README.md) changed are skipped." >> "$GITHUB_STEP_SUMMARY"
           echo "- Deleted directories are ignored gracefully (no build attempted)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Version tags are created as vN (and vN-<arch> for platform images)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Platform restrictions can be specified using a \`.buildconfig\` file in each directory." >> "$GITHUB_STEP_SUMMARY"
