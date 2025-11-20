@@ -92,3 +92,4 @@ The MicroShift systemd unit will be automatically restarted by the `hook-files.s
 
 The image includes an embedded configuration for zero-touch provisioning with enrollment. You can modify this configuration after installation, and the `hook-files.sh` script will automatically restart the flightctl-agent to apply the changes.
 
+
