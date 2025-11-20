@@ -113,4 +113,3 @@ After the device boots, you must complete the following steps to ensure proper o
 - Monitoring actions will only be triggered after the initial post-boot configuration is completed.
 - The system is designed for edge/demo environments and integrates tightly with Red Hat tools.
 - Installable artifact (ISO) will create demo user in the device: admin/redhat.
-
