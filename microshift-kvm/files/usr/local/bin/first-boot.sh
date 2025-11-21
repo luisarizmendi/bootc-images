@@ -58,9 +58,11 @@ virsh net-autostart default
 mkdir -p /var/lib/libvirt/cloud-init
 
 POOL_NAME="cloud-init"
-POOL_PATH="/var/lib/libvirt/cloud-init"
+POOL_PATH="/etc/libvirt/cloud-init/cloudinitisos"
 
 echo "Preparing pool ${POOL_NAME}..."
+
+chmod 755 /var/lib/libvirt/images
 
 # STEP 1: Destroy if running
 if virsh pool-info "${POOL_NAME}" >/dev/null 2>&1; then

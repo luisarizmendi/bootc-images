@@ -76,7 +76,9 @@ After the device boots, you can customize the following components:
 
 Using the `hook-files.sh` monitoring capability, you can configure any VM by placing VM definitions in `/etc/libvirt/qemu`. If you remove a VM definition file the VM will be removed from the system (it takes some time to complete after the file removal). 
 
-VMs can use [cloud-init scripts but those must be contained in ISOs](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/html/configuring_and_managing_cloud-init_for_rhel/creating-a-virtual-machine-with-cloud-init). In order to simplify the process the `hook-files.sh` will create the iso with the cloud-init files automatically when you place them in `/etc/libvirt/cloud-init/files/<name>`.
+**NOTE:** The embedded VM takes some time to be created on the first boot since the disk file must be downloaded.
+
+VMs can use [cloud-init scripts but those must be contained in ISOs](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/html/configuring_and_managing_cloud-init_for_rhel/creating-a-virtual-machine-with-cloud-init). In order to simplify the process the `hook-files.sh` will create the iso with the cloud-init files automatically when you place them in `/etc/libvirt/cloud-init/files/<name>`. The embedded VM is using the cloud-init files that you find in `/etc/libvirt/cloud-init/files/test-vm` (password is `redhat`).
 
 **Important**: Remember to download the VM disk files as well. You can automate this by adding appropriate configuration entries in `/etc/get-files.yaml` to use the `get-files.sh` script automatically.
 
