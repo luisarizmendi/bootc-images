@@ -1,0 +1,16 @@
+#cloud-config
+ssh_pwauth: true
+disable_root: false
+
+users:
+  - name: admin
+    groups: wheel
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    passwd: '$6$HvRAqBPWnVfbJDF0$pE6IeFbYw.kyQ8dmsjhPaMe9khGzeoCUzQWC5tKnJrWCp7klOtZQw75UvupHTjVRckGzlX1yI51Qfk7UMk0Pd0'
+    lock_passwd: false
+    
+chpasswd:
+  expire: False
+
+ssh_pwauth: true

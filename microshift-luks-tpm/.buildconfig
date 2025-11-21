@@ -9,9 +9,9 @@ platforms: linux/amd64
 artifacts: true
 
 # Valid values: anaconda-iso, qcow2, vmdk, raw, ami, vhd, gce
-artifact_formats: anaconda-iso
+#artifact_formats: anaconda-iso
 
 ##### VERSION MANAGEMENT
 # Valid values: true, false
 # When true, keeps the existing version instead of incrementing (default: false)
-keep_version: false
+keep_version: true

@@ -1,0 +1,9 @@
+- if:
+  - path: /etc/libvirt/qemu/vms/
+    op: [created, updated]
+  run: export LIBVIRT_DEFAULT_URI=qemu:///system ; for i in ${Files}; do virsh define $i ; systemctl start libvirt-vm@$(basename "$i" | sed 's/\.[^.]*$//').service ;  systemctl enable libvirt-vm@$(basename "$i" | sed 's/\.[^.]*$//').service ; virsh autostart $(basename "$i" | sed 's/\.[^.]*$//') ; done
+
+- if:
+  - path: /etc/libvirt/qemu/vms/
+    op: [removed]
+  run: export LIBVIRT_DEFAULT_URI=qemu:///system ; for i in ${Files}; do systemctl stop libvirt-vm@$(basename "$i" | sed 's/\.[^.]*$//').service ; virsh undefine $(basename "$i" | sed 's/\.[^.]*$//') ; sudo systemctl disable libvirt-vm@$(basename "$i" | sed 's/\.[^.]*$//').service; done  

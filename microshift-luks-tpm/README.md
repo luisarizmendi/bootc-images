@@ -8,11 +8,18 @@ This repository contains a **Bootc image** designed for secure and automated edg
 
 This image includes:
 
-- **Flightctl agent**  
-  Enables management of the device through **Red Hat Edge Manager**.
+- **Flightctl agent** - Enables management of the device through **Red Hat Edge Manager**.
 
-- **MicroShift**  
-  Fully integrated with **dynamic storage provisioning** for lightweight Kubernetes workloads at the edge.
+- **MicroShift** - Fully integrated with dynamic configuration.
+
+- **Dynamic File Retrieval** - The `get-files.sh` script (located in `/usr/local/bin`) downloads files from HTTP sources or container registries, with configuration managed via `/etc/get-files.yaml`.
+
+- **First Boot Automation** - The `first-boot.sh` script (in `/usr/local/bin`) runs on initial device boot and performs:
+  - Hostname configuration based on MAC address using `set-hostname-from-mac.sh`
+  - MicroShift configuration with device-specific settings (IP) via `create-microshift-dynamic-conf.sh`
+  - File downloads using `get-files.sh`
+
+- **Hook-Based File Monitoring** - The `hook-files.sh` script (in `/usr/local/bin`) monitors files and directories, triggering actions configured in `/usr/lib/flightctl/hooks.d/afterupdating`. Uses the same configuration files as the flightctl-agent, ensuring compatibility with Red Hat Edge Manager. The script automatically disables itself once the device is enrolled to avoid conflicts with Red Hat Edge Manager's native hook feature.
 
 - **Disk Encryption**  
   The root disk is encrypted with **LUKS**, and encryption keys are securely stored in the **TPM**.  
@@ -24,13 +31,6 @@ This image includes:
   - Join the device to an **IDM (Identity Management) domain**.
   - Configure **802.1X authentication** for the network.
   - Prepare the device to use **Certmonger** for automatic renewal of 802.1X certificates.
-
-- **Dynamic Hostname Assignment**  
-  During boot, a script sets the hostname of the device using its **MAC address**.
-
-- **File Monitoring Systemd Unit**  
-  - Monitors specific paths/files.
-  - On changes, triggers actions configured in `/etc/file-monitor/monitor.conf`.
 
 
 ---
@@ -54,6 +54,7 @@ podman cp temp-container:/ ./artifacts/
 ls -la artifacts/bootiso/
 ```
 
+
 ---
 
 ## Device requirements
@@ -63,17 +64,17 @@ ls -la artifacts/bootiso/
 
 ---
 
-
 ## Pre-Build Configuration
 
-1. **Red Hat Edge Manager config**  
+### 1. Red Hat Edge Manager Config
 
-    You should include your specific Red Hat Edge manager config file under `/etc/flightctl/config.yaml` before build your image in order to get a fully automated onboarding.
+You should include your specific Red Hat Edge Manager config file under `/etc/flightctl/config.yaml` before building your image to enable fully automated onboarding. 
 
-    If you don't want to re-build the image you can change the built-it file with the one containing your values after installing the device as a post-boot action. This will trigger automatically the flightctl agent restart thanks to the file monitoring systemd unit.
+If you don't want to rebuild the image, you can change the built-in file with one containing your values after installing the device as a post-boot action. This will automatically trigger the flightctl-agent restart thanks to the hook-files.sh monitoring script.
 
 
-2. **IDM CA Certificate**  
+
+### 2. IDM CA Certificate
    Add your IDM CA certificate to the trusted store:  
    ```text
    /etc/pki/ca-trust/source/anchors/ca.crt
@@ -82,25 +83,38 @@ ls -la artifacts/bootiso/
    You can also do it as a post-boot step since the `/etc/pki/ca-trust/source/anchors/ca.crt` file is being monitored by the `file-monitor` systemd unit.
 
 
+---
 
 ## Post-Boot Configuration
 
-After the device boots, you must complete the following steps to ensure proper operation of monitoring and network integration:
+After the device boots, you can customize the following components:
 
-1. **Pull Secret**  
-   Place your OpenShift pull secret at:  
-   ```text
-   /etc/crio/openshift-pull-secret
-   ```
-2. **DNS Configuration**  
-   - If your demo environment does not have a DNS entry for the IDM, update `/etc/hosts` to resolve the IDM server.
+### MicroShift
 
-3. **IDM Variables for 802.1X**  
-   Configure your IDM-specific variables in:  
-   ```text
-   /etc/sysconfig/setup-8021x-cert
-   ```
+Place your OpenShift pull secret at:
 
+```text
+/etc/crio/openshift-pull-secret
+```
+
+The MicroShift systemd unit will be automatically restarted by the `hook-files.sh` script when this file is updated.
+
+
+### DNS Configuration 
+
+If your demo environment does not have a DNS entry for the IDM, update `/etc/hosts` to resolve the IDM server.
+
+### IDM Variables for 802.1X
+
+Configure your IDM-specific variables in: 
+
+```text
+/etc/sysconfig/setup-8021x-cert
+```
+
+### Flightctl / Red Hat Edge Manager
+
+The image includes an embedded configuration for zero-touch provisioning with enrollment. You can modify this configuration after installation, and the `hook-files.sh` script will automatically restart the flightctl-agent to apply the changes.
 
 
 > These steps can be completed **manually** or via **Red Hat Edge Manager**.

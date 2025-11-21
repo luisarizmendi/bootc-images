@@ -28,20 +28,24 @@ RUN dnf config-manager \
         --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
         --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms
 
-RUN dnf install -y inotify-tools firewalld microshift microshift-cert-manager microshift-olm dialog certmonger ipa-client \
-    systemd cryptsetup tpm2-tools tpm2-tss pciutils \
-    systemd-udev dracut && \
+RUN dnf install -y xz yq podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm dialog certmonger ipa-client  \
+     cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
     systemctl enable microshift && \
-    systemctl enable certmonger.service && \
+    systemctl enable cockpit.socket && \
     dnf clean all
 
 COPY files/ /
 
-RUN chmod +x /usr/local/sbin/* && chmod +x /usr/local/bin/* && \
-    ln -s /usr/lib/systemd/system/file-monitor.service /etc/systemd/system/multi-user.target.wants/file-monitor.service && \
-    ln -s /usr/lib/systemd/system/setup-8021x-cert.service /etc/systemd/system/multi-user.target.wants/setup-8021x-cert.service && \
-    ln -s /usr/lib/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service && \
-    ln -s /usr/lib/systemd/system/microshift-dynamic-conf.service /etc/systemd/system/multi-user.target.wants/microshift-dynamic-conf.service
+RUN chmod +x /usr/local/bin/* && \
+    ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
+    ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
+
+
+# Build and install the SELinux module for Cockpit
+RUN checkmodule -M -m -o /tmp/my-cockpit.mod /tmp/my-cockpit.te && \
+    semodule_package -o /tmp/my-cockpit.pp -m /tmp/my-cockpit.mod && \
+    semodule -X 300 -i /tmp/my-cockpit.pp && \
+    restorecon -Rv /usr 
 
 RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
     firewall-offline-cmd --zone=trusted --add-source=169.254.169.1 && \
@@ -62,3 +66,5 @@ RUN set -xe; \
            --install "systemd-cryptenroll cryptsetup" \
            --no-hostonly \
            /usr/lib/modules/$kver/initramfs.img "$kver"
+
+

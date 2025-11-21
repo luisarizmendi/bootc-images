@@ -1,0 +1,9 @@
+- if:
+  - path: /etc/libvirt/cloud-init/files/
+    op: [created, updated]
+  run: unique_dirs=($(printf "%s\n" "${Files[@]}" | xargs -n1 dirname | sort -u)); for i in ${unique_dirs}; do /usr/local/bin/generate-cloudinitiso.sh $i /etc/libvirt/cloud-init/cloudinitisos/ ; done
+
+- if:
+  - path: /etc/libvirt/cloud-init/files/
+    op: [removed]
+  run: unique_dir_names=($(printf "%s\n" "${Files[@]}" | xargs -n1 dirname | xargs -n1 basename | sort -u));  for i in ${unique_dir_names}; do rm /etc/libvirt/cloud-init/cloudinitisos/$(basename "$i" | sed 's/\.[^.]*$//').iso ; done

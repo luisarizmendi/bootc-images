@@ -1,16 +1,47 @@
-FROM registry.redhat.io/rhel9/rhel-bootc:9.6
+ARG BASE_IMAGE_TAG='9.6'
+########################################
 
-RUN dnf install -y shadow-utils libvirt-daemon-config-network libvirt-daemon-kvm qemu-kvm qemu-img libvirt virt-install virt-viewer libguestfs-tools python3-libguestfs virt-top  \
-    && dnf clean all
+FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
 
-RUN for drv in qemu network nodedev nwfilter secret storage interface; do systemctl enable virt${drv}d{,-ro,-admin}.socket; done
+################################################################################
+#Red Hat Edge Manager
+################################################################################
+RUN dnf -y copr enable @redhat-et/flightctl && \
+    dnf -y install flightctl-agent && \
+    dnf -y clean all && \
+    systemctl enable flightctl-agent.service && \
+    systemctl mask bootc-fetch-apply-updates.timer
+
+# Optional: To enable podman-compose application support, uncomment below
+ RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
+     dnf -y install podman-compose && \
+     dnf -y clean all && \
+     rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
+     systemctl enable podman.service
+
+################################################################################
 
 
-#////////////////////////////////////////
-#DEMO V2 update (cockpit)
-#////////////////////////////////////////
-RUN dnf install -y  cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording \
-    && dnf clean all
+RUN dnf install -y xz yq podman-plugins inotify-tools firewalld dialog \
+     shadow-utils guestfs-tools libvirt-daemon-config-network libvirt-daemon-kvm qemu-kvm qemu-img libvirt virt-install virt-viewer libguestfs-tools python3-libguestfs virt-top \
+     cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
+    for drv in qemu network nodedev nwfilter secret storage interface; do systemctl enable virt${drv}d{,-ro,-admin}.socket; done && \
+    systemctl enable cockpit.socket && \
+    dnf clean all
 
-RUN systemctl enable cockpit.socket
-#////////////////////////////////////////
+COPY files/ /
+
+RUN chmod +x /usr/local/bin/* && \
+    ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
+    ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
+
+
+# Build and install the SELinux module for Cockpit
+RUN checkmodule -M -m -o /tmp/my-cockpit.mod /tmp/my-cockpit.te && \
+    semodule_package -o /tmp/my-cockpit.pp -m /tmp/my-cockpit.mod && \
+    semodule -X 300 -i /tmp/my-cockpit.pp && \
+    restorecon -Rv /usr 
+
+
+
+
