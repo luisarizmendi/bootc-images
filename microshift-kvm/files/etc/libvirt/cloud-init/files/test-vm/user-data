@@ -1,7 +1,9 @@
 #cloud-config
+ssh_pwauth: true
 users:
   - name: admin
-    groups: [sudo, wheel]
+    groups: wheel
     shell: /bin/bash
-    sudo: ALL=(ALL) NOPASSWD:ALL
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
     passwd: "$6$/7rTITXmb1xpkB52$1L6xl53aTMayMIqhdxh6VxLGguy2CUxxf50oqcJGElUgcyx/8nTIEBKtvP6erLtwwLS5B6ZyCEDkrZMGC8ydN/"
+

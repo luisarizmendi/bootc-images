@@ -1,0 +1,9 @@
+- if:
+  - path: /etc/libvirt/cloud-init/files/
+    op: [created, updated]
+  run: for i in ${Files}; do /usr/local/bin/generate-cloudinitiso.sh $i /etc/libvirt/cloud-init/cloudinitisos/ ; done
+
+- if:
+  - path: /etc/libvirt/cloud-init/files/
+    op: [removed]
+  run: for i in ${Files}; do rm /etc/libvirt/cloud-init/cloudinitisos/$(basename "$i" | sed 's/\.[^.]*$//') ; done
