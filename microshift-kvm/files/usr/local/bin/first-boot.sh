@@ -104,7 +104,7 @@ virsh pool-autostart "${POOL_NAME}"
 
 echo "Pool '${POOL_NAME}' ready."
 
-for i in $(ls /etc/libvirt/qemu/*.xml); do
+for i in $(ls /etc/libvirt/qemu/vms/*.xml); do
     virsh define "$i"
 done
 
