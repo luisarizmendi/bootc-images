@@ -7,7 +7,7 @@ ENROLLMENT_CHECK_INTERVAL="${ENROLLMENT_CHECK_INTERVAL:-300}"  # Default: 5 minu
 # Extension filtering configuration
 # Blacklist: comma-separated list of extensions to ignore (without the dot)
 # Default includes temporary and backup files
-FILE_MONITOR_BLACKLIST="${FILE_MONITOR_BLACKLIST:-swp,swpx,swx,swo,bak,tmp,temp,~,orig,rej,dpkg-old,dpkg-new,dpkg-dist,rpmsave,rpmnew,new}"
+FILE_MONITOR_BLACKLIST="${FILE_MONITOR_BLACKLIST:-swp,swpx,swx,swo,bak,tmp,temp,~,orig,rej,dpkg-old,dpkg-new,dpkg-dist,rpmsave,rpmnew,new,tmp-*}"
 
 # Whitelist: comma-separated list of extensions to allow (without the dot)
 # Use "*" (default) to allow all extensions (subject to blacklist)
@@ -81,6 +81,12 @@ should_process_extension() {
     local filepath="$1"
     local filename
     filename=$(basename "$filepath")
+    
+    # Skip hidden files and common temporary patterns
+    if [[ "$filename" =~ ^\. ]] || [[ "$filename" =~ \.tmp- ]] || [[ "$filename" =~ ^\..*\.tmp ]]; then
+        log "DEBUG: Skipping temporary file pattern: $filepath"
+        return 1
+    fi
     
     # Extract extension (everything after the last dot, lowercase)
     local ext=""
