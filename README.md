@@ -40,6 +40,37 @@ Store your images in designated folders within the repository's root directory. 
 5. **Push**
    - Pushes container images and artifact images to the configured registry
 
+
+---
+
+## Configuration Summary
+
+### Required Secrets (Minimum Setup)
+Choose one authentication method:
+
+**Username/Password:**
+- `RH_USERNAME`: Your Red Hat username
+- `RH_PASSWORD`: Your Red Hat password
+
+**OR Organization/Activation Key:**
+- `RHT_ORGID`: Your Red Hat organization ID  
+- `RHT_ACT_KEY`: Your Red Hat activation key
+
+### Optional Configuration
+
+**Repository Variables:**
+- `DEST_REGISTRY_HOST`: Destination registry (default: `ghcr.io`)
+- `DEST_REGISTRY_USER`: Registry username (default: repository owner)
+
+**Repository Secrets:**
+- `DEST_REGISTRY_PASSWORD`: Registry password (default: GitHub token)
+- `SOURCE_REGISTRY_USER`: Source registry username override
+- `SOURCE_REGISTRY_PASSWORD`: Source registry password override
+
+**Optional Parameters:**
+- `BASE_PATH`: Path where the image definitions are located in the repo (defaults to "/")
+- `IMAGE_PREFIX`: Prefix that will be included in the container image names (defaults to "bootc")
+
 ---
 
 ## Repository Setup
@@ -125,33 +156,13 @@ If you need different credentials for pulling from registry.redhat.io:
    - `SOURCE_REGISTRY_USER`: Registry username (defaults to `RH_USERNAME`)
    - `SOURCE_REGISTRY_PASSWORD`: Registry password (defaults to `RH_PASSWORD`)
 
----
 
-## Configuration Summary
+### 6. (Optional) Override other paremeters
 
-### Required Secrets (Minimum Setup)
-Choose one authentication method:
-
-**Username/Password:**
-- `RH_USERNAME`: Your Red Hat username
-- `RH_PASSWORD`: Your Red Hat password
-
-**OR Organization/Activation Key:**
-- `RHT_ORGID`: Your Red Hat organization ID  
-- `RHT_ACT_KEY`: Your Red Hat activation key
-
-### Optional Configuration
-
-**Repository Variables:**
-- `DEST_REGISTRY_HOST`: Destination registry (default: `ghcr.io`)
-- `DEST_REGISTRY_USER`: Registry username (default: repository owner)
-
-**Repository Secrets:**
-- `DEST_REGISTRY_PASSWORD`: Registry password (default: GitHub token)
-- `SOURCE_REGISTRY_USER`: Source registry username override
-- `SOURCE_REGISTRY_PASSWORD`: Source registry password override
-
-
+1. Go to **Repository Settings** → **Secrets and variables** → **Actions**.
+2. Under **Variables**, add any of these that you want to override:
+   - `BASE_PATH`: Path where the image definitions are located in the repo (defaults to "/")
+   - `IMAGE_PREFIX`: Prefix that will be included in the container image names (defaults to "bootc")
 
 ---
 
