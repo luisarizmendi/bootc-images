@@ -15,6 +15,10 @@ on:
         description: 'Base path for image directories (e.g., "devices" or leave empty for root)'
         required: false
         default: ''
+      image_prefix:
+        description: 'Image name prefix (e.g., "bootc" for bootc-<imagename>)'
+        required: false
+        default: 'bootc'
   push:
     branches:
       - main
@@ -29,6 +33,7 @@ jobs:
       formats: ${{ steps.setup.outputs.formats }}
       base_path: ${{ steps.setup.outputs.base_path }}
       matrix: ${{ steps.setup.outputs.matrix }}
+      image_prefix: ${{ steps.setup.outputs.image_prefix }}
       artifact_matrix: ${{ steps.setup.outputs.artifact_matrix }}
       dirs: ${{ steps.setup.outputs.dirs }}
       has_dirs: ${{ steps.setup.outputs.has_dirs }}
@@ -68,10 +73,12 @@ jobs:
             PLATFORMS="${{ github.event.inputs.platforms }}"
             FORMATS="${{ github.event.inputs.formats }}"
             BASE_PATH="${{ github.event.inputs.base_path }}"
+            IMAGE_PREFIX="${{ github.event.inputs.image_prefix }}" 
           else
             PLATFORMS="linux/amd64,linux/arm64"
             FORMATS="anaconda-iso"
             BASE_PATH="${{ vars.BASE_PATH || '' }}"
+            IMAGE_PREFIX="${{ vars.IMAGE_PREFIX || 'bootc' }}"
           fi
 
           # Normalize base path (remove leading/trailing slashes)
@@ -83,11 +90,13 @@ jobs:
           fi
 
           echo "base_path=$BASE_PATH" >> "$GITHUB_OUTPUT"
+          echo "image_prefix=$IMAGE_PREFIX" >> "$GITHUB_OUTPUT" 
           echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
           echo "formats=$FORMATS" >> "$GITHUB_OUTPUT"
 
           echo "Building for platforms: $PLATFORMS"
           echo "Building formats: $FORMATS"
+          echo "Using image prefix: $IMAGE_PREFIX"  
 
           # Function to check if a filename matches any blacklisted pattern (case-insensitive)
           is_blacklisted() {
@@ -397,7 +406,7 @@ jobs:
               done
 
               # Handle artifact configuration
-              IMAGE_BASE="${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}/${{ vars.DEST_REGISTRY_USER || github.repository_owner }}/bootc-$IMAGE_NAME"
+              IMAGE_BASE="${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}/${{ vars.DEST_REGISTRY_USER || github.repository_owner }}/${IMAGE_PREFIX}-${IMAGE_NAME}"
               ARTIFACT_CONFIG=$(get_artifact_config "$DIR" "$FORMATS" "$ALLOWED_PLATFORMS")
               IFS='|' read -ra CONFIG_PARTS <<< "$ARTIFACT_CONFIG"
               CREATE_ARTIFACTS="${CONFIG_PARTS[0]}"
@@ -498,6 +507,7 @@ jobs:
       DEST_REGISTRY_HOST: "${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}"
       DEST_REGISTRY_USER: "${{ vars.DEST_REGISTRY_USER || github.repository_owner }}"
       DEST_REGISTRY_PASSWORD: "${{ secrets.DEST_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}"
+      IMAGE_PREFIX: "${{ needs.setup.outputs.image_prefix }}"  
     container:
       image: registry.access.redhat.com/ubi9/ubi
       options: --privileged -v /mnt:/mnt
@@ -542,7 +552,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          IMAGE_NAME="bootc-${{ matrix.image_name }}"
+          IMAGE_NAME="${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}"
           IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${IMAGE_NAME}"
           KEEP_VERSION="${{ matrix.keep_version }}"
 
@@ -583,7 +593,7 @@ jobs:
         id: build
         uses: redhat-actions/buildah-build@v2
         with:
-          image: ${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.image_name }}
+          image: ${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}
           tags: |
             latest-${{ matrix.arch }}
             ${{ github.sha }}-${{ matrix.arch }}
@@ -627,6 +637,7 @@ jobs:
       DEST_REGISTRY_HOST: "${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}"
       DEST_REGISTRY_USER: "${{ vars.DEST_REGISTRY_USER || github.repository_owner }}"
       DEST_REGISTRY_PASSWORD: "${{ secrets.DEST_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}"
+      IMAGE_PREFIX: "${{ needs.setup.outputs.image_prefix }}"
     container:
       image: registry.access.redhat.com/ubi9/ubi
       options: --privileged --user root -v /mnt:/mnt
@@ -692,7 +703,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          IMAGE_NAME="bootc-${{ matrix.image_name }}"
+          IMAGE_NAME="${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}"
           IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${IMAGE_NAME}"
           KEEP_VERSION="${{ matrix.keep_version }}"
 
@@ -737,7 +748,7 @@ jobs:
 
       - name: Pull bootc image for artifact creation
         run: |
-          IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.image_name }}:latest-${{ matrix.arch }}"
+          IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}:latest-${{ matrix.arch }}" 
           echo "Pulling bootc image: $IMAGE"
           podman pull "$IMAGE"
 
@@ -753,7 +764,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.image_name }}:latest-${{ matrix.arch }}"
+          IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}:latest-${{ matrix.arch }}"
           
           echo "Using output directory: $OUTPUT_DIR"
           echo "Creating ${{ matrix.format }} artifact for $IMAGE"
@@ -847,7 +858,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          ARTIFACT_IMAGE_NAME="${{ env.DEST_REGISTRY_USER }}/bootc-${{ matrix.image_name }}-${{ matrix.format }}"
+          ARTIFACT_IMAGE_NAME="${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}-${{ matrix.format }}"
           ARTIFACT_IMAGE_TAG="${{ steps.version.outputs.version }}-${{ matrix.arch }}"
 
           echo "Creating scratch image: $ARTIFACT_IMAGE_NAME:$ARTIFACT_IMAGE_TAG"
@@ -896,6 +907,7 @@ jobs:
       DEST_REGISTRY_HOST: "${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}"
       DEST_REGISTRY_USER: "${{ vars.DEST_REGISTRY_USER || github.repository_owner }}"
       DEST_REGISTRY_PASSWORD: "${{ secrets.DEST_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}"
+      IMAGE_PREFIX: "${{ needs.setup.outputs.image_prefix }}"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -961,9 +973,9 @@ jobs:
 
           for DIR in "${DIRS[@]}"; do
             IMAGE_NAME=$(get_image_name "$DIR")
-            IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$IMAGE_NAME"
+            IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-$IMAGE_NAME" 
 
-            echo "\n=== Processing bootc-$IMAGE_NAME (from $DIR) ==="
+            echo "\n=== Processing ${{ env.IMAGE_PREFIX }}-$IMAGE_NAME (from $DIR) ==="
 
             ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
             echo "Directory $DIR platforms: $ALLOWED_PLATFORMS"
@@ -1059,6 +1071,7 @@ jobs:
     env:
       DEST_REGISTRY_HOST: "${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}"
       DEST_REGISTRY_USER: "${{ vars.DEST_REGISTRY_USER || github.repository_owner }}"
+      IMAGE_PREFIX: "${{ needs.setup.outputs.image_prefix }}"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -1126,6 +1139,7 @@ jobs:
           fi
 
           echo "### Global Configuration" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image Prefix**: ${{ env.IMAGE_PREFIX }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Platforms**: ${{ needs.setup.outputs.platforms }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Formats**: ${{ needs.setup.outputs.formats }}" >> "$GITHUB_STEP_SUMMARY"
           BASE_PATH="${{ needs.setup.outputs.base_path }}"
@@ -1159,9 +1173,9 @@ jobs:
             fi
             
             if [ -n "$EXTRA_INFO" ]; then
-              echo "- **$IMAGE_NAME** (from $DIR, $EXTRA_INFO): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$IMAGE_NAME:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
+              echo "- **$IMAGE_NAME** (from $DIR, $EXTRA_INFO): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-$IMAGE_NAME:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "- **$IMAGE_NAME** (from $DIR): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$IMAGE_NAME:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
+              echo "- **$IMAGE_NAME** (from $DIR): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-$IMAGE_NAME:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
 
@@ -1185,7 +1199,7 @@ jobs:
 
                 IFS=',' read -ra FORMAT_ARRAY <<< "$DIR_FORMATS"
                 for FORMAT in "${FORMAT_ARRAY[@]}"; do
-                  echo "  - **Image**: \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/bootc-$IMAGE_NAME-$FORMAT:{latest | vN}\`" >> "$GITHUB_STEP_SUMMARY"
+                  echo "  - **Image**: \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-$IMAGE_NAME-$FORMAT:{latest | vN}\`" >> "$GITHUB_STEP_SUMMARY"
                 done
               fi
             done
