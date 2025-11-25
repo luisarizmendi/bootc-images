@@ -23,7 +23,7 @@ RUN dnf -y copr enable @redhat-et/flightctl && \
 
 
 RUN dnf install -y xz yq podman-plugins inotify-tools firewalld dialog \
-     shadow-utils guestfs-tools libvirt-daemon-config-network libvirt-daemon-kvm qemu-kvm qemu-img libvirt virt-install virt-viewer libguestfs-tools python3-libguestfs virt-top \
+     shadow-utils guestfs-tools libvirt-daemon-config-network libvirt-daemon-kvm qemu-kvm qemu-img libvirt virt-install virt-viewer libguestfs-tools python3-libguestfs virt-top && \
      cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
     for drv in qemu network nodedev nwfilter secret storage interface; do systemctl enable virt${drv}d{,-ro,-admin}.socket; done && \
     systemctl enable cockpit.socket && \
