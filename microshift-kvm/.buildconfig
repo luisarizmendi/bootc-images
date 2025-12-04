@@ -15,3 +15,6 @@ artifacts: true
 # Valid values: true, false
 # When true, keeps the existing version instead of incrementing (default: false)
 keep_version: true
+
+base_path: devices
+image_prefix: device

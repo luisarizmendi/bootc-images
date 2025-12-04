@@ -21,6 +21,18 @@ until /usr/local/bin/get-files.sh; do
   sleep 5
 done
 
+
+###############################################################
+## COCKPIT
+if [ -f /tmp/my-cockpit.te ]; then
+    checkmodule -M -m -o /tmp/my-cockpit.mod /tmp/my-cockpit.te && \
+    semodule_package -o /tmp/my-cockpit.pp -m /tmp/my-cockpit.mod && \
+    semodule -i /tmp/my-cockpit.pp && \
+    restorecon -Rv /usr && \
+    rm -f /tmp/my-cockpit.{te,mod,pp}
+fi
+
+
 ###############################################################
 ## LIBVIRT
 echo "Configuring libvirt..."

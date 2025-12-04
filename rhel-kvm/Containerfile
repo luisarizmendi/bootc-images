@@ -1,16 +1,20 @@
 ARG BASE_IMAGE_TAG='9.6'
+ARG ACM_VER='2.14'
 ########################################
-
 FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
+
+ARG ACM_VER
 
 ################################################################################
 #Red Hat Edge Manager
 ################################################################################
-RUN dnf -y copr enable @redhat-et/flightctl && \
-    dnf -y install flightctl-agent && \
+
+RUN dnf config-manager \
+        --set-enabled rhacm-${ACM_VER}-for-rhel-9-$(uname -m)-rpms && \
+    dnf -y install flightctl-agent flightctl && \
     dnf -y clean all && \
     systemctl enable flightctl-agent.service && \
-    systemctl mask bootc-fetch-apply-updates.timer
+    systemctl mask bootc-fetch-apply-updates.timer 
 
 # Optional: To enable podman-compose application support, uncomment below
  RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
@@ -20,13 +24,13 @@ RUN dnf -y copr enable @redhat-et/flightctl && \
      systemctl enable podman.service
 
 ################################################################################
+# Customization
+################################################################################
 
 
 RUN dnf install -y xz yq podman-plugins inotify-tools firewalld dialog \
-     shadow-utils guestfs-tools libvirt-daemon-config-network libvirt-daemon-kvm qemu-kvm qemu-img libvirt virt-install virt-viewer libguestfs-tools python3-libguestfs virt-top \
-     cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
+    shadow-utils guestfs-tools libvirt-daemon-config-network libvirt-daemon-kvm qemu-kvm qemu-img libvirt virt-install virt-viewer libguestfs-tools python3-libguestfs virt-top && \
     for drv in qemu network nodedev nwfilter secret storage interface; do systemctl enable virt${drv}d{,-ro,-admin}.socket; done && \
-    systemctl enable cockpit.socket && \
     dnf clean all
 
 COPY files/ /
@@ -36,12 +40,14 @@ RUN chmod +x /usr/local/bin/* && \
     ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
 
 
-# Build and install the SELinux module for Cockpit
-RUN checkmodule -M -m -o /tmp/my-cockpit.mod /tmp/my-cockpit.te && \
-    semodule_package -o /tmp/my-cockpit.pp -m /tmp/my-cockpit.mod && \
-    semodule -X 300 -i /tmp/my-cockpit.pp && \
-    restorecon -Rv /usr 
 
+################################################################################
+# v2 (splitted here for demo)
+################################################################################
 
+#RUN dnf install -y cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
+#    systemctl enable cockpit.socket && \
+#    firewall-offline-cmd --zone=public --add-port=9090/tcp && \
+#    dnf clean all
 
 

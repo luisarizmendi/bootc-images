@@ -2,74 +2,81 @@
 contents = '''
 network --bootproto=dhcp --device=link --activate --onboot=on
 zerombr
-
 user --name=admin --password=$6$nRAle.gs2bcemfTO$n706swfUtMOVfIZ2QngZCQD4OWGoOwWhAYvbzh1zPuMgD1t.Qo6b.3LQPcoVNZnQZ7RjIJi43Jik1VMbRiR.B/ --groups=wheel,libvirt --iscrypted
 
 %pre --interpreter=/bin/bash
+exec > /tmp/pre.log 2>&1
 set -ex
-
+echo "==== %pre started ===="
 # Detect the first non-removable physical disk
-DISK=$(lsblk -ndo NAME,TYPE,RO,RM | awk '$2=="disk" && $3==0 && $4==0 {print "/dev/"$1; exit}')
-
+DISK=$(lsblk -ndo NAME,TYPE,RO,RM | awk '$2=="disk" && $3==0 && $4==0 && $1 !~ /^zram/ && $1 !~ /^loop/ {print "/dev/"$1; exit}')
 # calculate 30% of its size to assign to the LVMS VG
 TOTAL=$(blockdev --getsize64 "$DISK")
 LVMS_SIZE_MIB=$(( TOTAL * 30 / 100 / 1048576 ))
 echo "Disk: $DISK (${LVMS_SIZE_MIB} MiB for LVMS)"
-
 cat <<EOF > /tmp/dynamic-partition.ks
 clearpart --all
 reqpart --add-boot
-
-# SWAP Partition (no LUKS)
+# SWAP Partition
 part swap --size=2048 --ondisk=$(basename $DISK)
-
-# Physical partition for LVMS (no LUKS)
-part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --ondisk=$(basename $DISK)
+# Physical partition for LVMS - give it a label
+part pv.01 --size=10000 --grow --maxsize=${LVMS_SIZE_MIB} --ondisk=$(basename $DISK) --label=lvms_pv
 part / --size=1000 --grow --fstype xfs --ondisk=$(basename $DISK)
 EOF
 %end
 
 %include /tmp/dynamic-partition.ks
 
-%post --log=/var/log/anaconda/post-install.log
-set -e
+%post --nochroot
+mkdir -p /mnt/sysimage/var/log/anaconda
+cp /tmp/pre.log /mnt/sysimage/var/log/anaconda/pre-install.log
+echo "Copied pre.log into installed system"
+%end
 
+%post --log=/var/log/anaconda/post-install.log
+set -ex
 echo "Setting up LVMS volume group..."
-# Find the partition created as pv.01 and use it directly (no LUKS)
+
+# Detect the first non-removable physical disk
+DISK=$(lsblk -ndo NAME,TYPE,RO,RM | awk '$2=="disk" && $3==0 && $4==0 && $1 !~ /^zram/ && $1 !~ /^loop/ {print "/dev/"$1; exit}')
+echo "Detected disk: $DISK"
+
+# Find the partition by filesystem label
 PV_PART=""
-# Look for a partition with PARTNAME "pv.01" (works with modern installers)
-for p in $(lsblk -rno NAME,PARTNAME | awk '$2=="pv.01"{print $1}'); do
-    PV_PART="/dev/$p"
-    echo "Found pv.01 partition: $PV_PART"
+set +e  # Don't exit on error during detection
+for part in $(lsblk -rno NAME,LABEL "${DISK}" | awk '$2=="lvms_pv"{print $1}'); do
+    PV_PART="/dev/$part"
+    echo "Found LVMS partition by label: $PV_PART"
     break
 done
+set -e
 
-# Fallback: if the PARTNAME lookup failed, try to guess the largest non-root, non-boot partition
+# Fallback: find the largest partition on the disk that isn't mounted
 if [ -z "$PV_PART" ]; then
-    echo "pv.01 partition not found by PARTNAME; attempting fallback detection..."
-    # choose the largest partition on the selected disk that is not the root or swap
-    PV_PART=$(lsblk -rno NAME,TYPE,MOUNTPOINT,SIZE | awk -v disk="$(basename $DISK)" '
-      $2=="part" {
-        cmd = "cat /sys/class/block/" $1 "/partition 2>/dev/null"
-        if ( (cmd | getline) > 0 ) close(cmd)
-      }
-      { print $0 }
-    ' | awk '{print $1}' | while read -r part; do
-        dev="/dev/$part"
-        # skip root and boot mounts
-        if mountpoint -q "$dev"; then continue; fi
-        # prefer partitions on the chosen disk
-        if echo "$dev" | grep -q "/$(basename $DISK)"; then
-            echo "$dev"
-            break
-        fi
-    done)
+    echo "Partition not found by label; attempting fallback detection..."
+    PV_PART=$(lsblk -rno NAME,SIZE,MOUNTPOINT,TYPE "${DISK}" | \
+        awk 'NF==3 && $3=="part" {print $2" "$1}' | \
+        sort -rh | head -1 | awk '{print "/dev/"$2}')
+    echo "Fallback detected partition: $PV_PART"
 fi
 
+# Verify the partition exists and set up LVMS
 if [ -n "$PV_PART" ] && [ -b "$PV_PART" ]; then
-    pvcreate -ff -y "$PV_PART" || true
-    vgcreate microshift "$PV_PART" || vgchange -ay microshift
-    vgchange -ay microshift || true
+    echo "Setting up LVM on $PV_PART"
+    
+    # Wipe any existing signatures
+    wipefs -a "$PV_PART" || true
+    
+    # Create physical volume
+    pvcreate -ff -y "$PV_PART"
+    
+    # Create volume group
+    vgcreate microshift "$PV_PART"
+    
+    # Activate the volume group
+    vgchange -ay microshift
+    
+    # Create LVMS configuration
     mkdir -p /etc/microshift
     cat > /etc/microshift/lvms.yaml << 'EOF'
 socket-name: /run/lvm/lvmpolld.socket
@@ -79,16 +86,18 @@ device-classes:
     spare-gb: 0
     default: true
 EOF
-    echo "LVMS VG 'microshift' configured on $PV_PART"
+    echo "LVMS VG 'microshift' configured successfully on $PV_PART"
 else
-    echo "No suitable pv.01 partition found; skipping LVMS setup."
+    echo "ERROR: No suitable partition found for LVMS setup."
+    exit 1
 fi
 
-# Regenerate initramfs (harmless even without LUKS/TPM)
+# Regenerate initramfs to include LVM changes
 echo "Regenerating initramfs..."
-dracut -f --regenerate-all || true
+dracut -f --regenerate-all
 
+echo "Post-install configuration complete."
 %end
+
 reboot --eject
 '''
-

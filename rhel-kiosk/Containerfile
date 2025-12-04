@@ -1,4 +1,31 @@
-FROM registry.redhat.io/rhel9/rhel-bootc:9.6
+ARG BASE_IMAGE_TAG='9.6'
+ARG ACM_VER='2.14'
+########################################
+FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
+
+ARG ACM_VER
+
+################################################################################
+#Red Hat Edge Manager
+################################################################################
+
+RUN dnf config-manager \
+        --set-enabled rhacm-${ACM_VER}-for-rhel-9-$(uname -m)-rpms && \
+    dnf -y install flightctl-agent flightctl && \
+    dnf -y clean all && \
+    systemctl enable flightctl-agent.service && \
+    systemctl mask bootc-fetch-apply-updates.timer 
+
+# Optional: To enable podman-compose application support, uncomment below
+ RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
+     dnf -y install podman-compose && \
+     dnf -y clean all && \
+     rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
+     systemctl enable podman.service
+
+################################################################################
+# Customization
+################################################################################
 
 RUN useradd -m -d /var/home/kiosk kiosk 
 
@@ -7,9 +34,7 @@ RUN dnf install -y shadow-utils gnome-kiosk gdm gnome-kiosk-script-session  git 
 
 RUN mkdir -p /var/home/kiosk/.local/bin/ /etc/accountsservice/user-templates /etc/gdm/
 
-COPY files/gnome-kiosk-script /var/home/kiosk/.local/bin/
-COPY files/user-templates-standard /etc/accountsservice/user-templates/standard
-COPY files/gdm-custom.conf    /etc/gdm/custom.conf
+COPY files/ /
 
 RUN chmod +x /var/home/kiosk/.local/bin/gnome-kiosk-script && \
     chown -R kiosk:kiosk /var/home/kiosk
@@ -17,11 +42,8 @@ RUN chmod +x /var/home/kiosk/.local/bin/gnome-kiosk-script && \
 RUN systemctl set-default graphical.target
 
 #////////////////////////////////////////
-#DEMO V2 update (cockpit)
+#DEMO V2 update (tmux )
 #////////////////////////////////////////
-RUN dnf install -y cockpit cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording  \
-    && dnf clean all
-
-RUN systemctl enable cockpit.socket
+#RUN dnf install -y tmux && \
+#    dnf clean all
 #////////////////////////////////////////
- 

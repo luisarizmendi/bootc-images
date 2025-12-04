@@ -2,3 +2,8 @@
   - path: /etc/crio/openshift-pull-secret
     op: [created, updated, removed]
   run: systemctl restart microshift
+
+- if:
+  - path: /etc/microshift/observability/opentelemetry-collector.yaml
+    op: [created, updated, removed]
+  run: systemctl restart microshift-observability

@@ -70,6 +70,12 @@ ls -la artifacts/bootiso/
 
 You should include your specific Red Hat Edge Manager config file under `/etc/flightctl/config.yaml` before building your image to enable fully automated onboarding. 
 
+```bash
+flightctl login --username=<your_user> --password=<your_password> --insecure-skip-tls-verify https://<rhem_api_server_url>
+
+flightctl certificate request --signer=enrollment --expiration=365d --output=embedded > config.yaml
+```
+
 If you don't want to rebuild the image, you can change the built-in file with one containing your values after installing the device as a post-boot action. This will automatically trigger the flightctl-agent restart thanks to the hook-files.sh monitoring script.
 
 

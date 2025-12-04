@@ -6,10 +6,12 @@ zerombr
 user --name=admin --password=$6$nRAle.gs2bcemfTO$n706swfUtMOVfIZ2QngZCQD4OWGoOwWhAYvbzh1zPuMgD1t.Qo6b.3LQPcoVNZnQZ7RjIJi43Jik1VMbRiR.B/ --groups=wheel --iscrypted
 
 %pre --interpreter=/bin/bash
+exec > /tmp/pre.log 2>&1
 set -ex
+echo "==== %pre started ===="
 
 # Detect the first non-removable physical disk
-DISK=$(lsblk -ndo NAME,TYPE,RO,RM | awk '$2=="disk" && $3==0 && $4==0 {print "/dev/"$1; exit}')
+DISK=$(lsblk -ndo NAME,TYPE,RO,RM | awk '$2=="disk" && $3==0 && $4==0 && $1 !~ /^zram/ && $1 !~ /^loop/ {print "/dev/"$1; exit}')
 
 # calculate 30% of its size to assign to the LVMS VG
 TOTAL=$(blockdev --getsize64 "$DISK")
@@ -31,8 +33,18 @@ EOF
 
 %include /tmp/dynamic-partition.ks
 
+%post --nochroot
+mkdir -p /mnt/sysimage/var/log/anaconda
+cp /tmp/pre.log /mnt/sysimage/var/log/anaconda/pre-install.log
+echo "Copied pre.log into installed system"
+%end
+
 %post --log=/var/log/anaconda/post-install.log
 set -e
+
+# Detect the first non-removable physical disk
+DISK=$(lsblk -ndo NAME,TYPE,RO,RM | awk '$2=="disk" && $3==0 && $4==0 && $1 !~ /^zram/ && $1 !~ /^loop/ {print "/dev/"$1; exit}')
+
 
 PASSPHRASE="redhat"
 KEEP_PASSPHRASE="1"  # set empty to remove recovery key
@@ -105,4 +117,3 @@ rm -f /tmp/key
 %end
 reboot --eject
 '''
-

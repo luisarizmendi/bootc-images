@@ -6,7 +6,7 @@ platforms: linux/amd64
 ##### INSTALLABLE ARTIFACTS
 # Valid values: true, false, auto
 # Note auto creates an instalable artifact if it does not exist any
-artifacts: true
+#artifacts: auto
 
 # Valid values: anaconda-iso, qcow2, vmdk, raw, ami, vhd, gce
 #artifact_formats: anaconda-iso
@@ -14,4 +14,4 @@ artifacts: true
 ##### VERSION MANAGEMENT
 # Valid values: true, false
 # When true, keeps the existing version instead of incrementing (default: false)
-keep_version: true
+keep_version: false
