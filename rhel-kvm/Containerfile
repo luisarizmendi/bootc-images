@@ -45,9 +45,9 @@ RUN chmod +x /usr/local/bin/* && \
 # v2 (splitted here for demo)
 ################################################################################
 
-#RUN dnf install -y cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
-#    systemctl enable cockpit.socket && \
-#    firewall-offline-cmd --zone=public --add-port=9090/tcp && \
-#    dnf clean all
+RUN dnf install -y cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
+    systemctl enable cockpit.socket && \
+    firewall-offline-cmd --zone=public --add-port=9090/tcp && \
+    dnf clean all
 
 
