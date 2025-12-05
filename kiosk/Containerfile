@@ -29,7 +29,7 @@ RUN dnf config-manager \
 
 RUN useradd -m -d /var/home/kiosk kiosk 
 
-RUN dnf install -y shadow-utils gnome-kiosk gdm gnome-kiosk-script-session  git firefox \
+RUN dnf install -y stress shadow-utils gnome-kiosk gdm gnome-kiosk-script-session  git firefox \
     && dnf clean all
 
 RUN mkdir -p /var/home/kiosk/.local/bin/ /etc/accountsservice/user-templates /etc/gdm/
@@ -37,7 +37,10 @@ RUN mkdir -p /var/home/kiosk/.local/bin/ /etc/accountsservice/user-templates /et
 COPY files/ /
 
 RUN chmod +x /var/home/kiosk/.local/bin/gnome-kiosk-script && \
-    chown -R kiosk:kiosk /var/home/kiosk
+    chown -R kiosk:kiosk /var/home/kiosk && \
+    chmod +x /usr/local/bin/* && \
+    ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
+    ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
 
 RUN systemctl set-default graphical.target
 

@@ -1,0 +1,4 @@
+- if:
+  - path: /etc/get-files.yaml
+    op: [created, updated]
+  run: bash /usr/local/bin/get-files.sh

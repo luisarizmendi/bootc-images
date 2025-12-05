@@ -1,9 +1,11 @@
 ARG BASE_IMAGE_TAG='9.6'
-ARG ACM_VER='2.14'
+ARG USHIFT_VER='4.20'
+ARG ACM_VER='2.15'
 ########################################
 FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
 
 ARG ACM_VER
+ARG USHIFT_VER
 
 ################################################################################
 #Red Hat Edge Manager
@@ -24,13 +26,17 @@ RUN dnf config-manager \
      systemctl enable podman.service
 
 ################################################################################
-# Customization
-################################################################################
 
+RUN dnf config-manager \
+        --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
+        --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms \
+        --set-enabled gitops-1.16-for-rhel-9-$(uname -m)-rpms
 
-RUN dnf install -y stress xz yq podman-plugins inotify-tools firewalld dialog \
-    shadow-utils guestfs-tools libvirt-daemon-config-network libvirt-daemon-kvm qemu-kvm qemu-img libvirt virt-install virt-viewer libguestfs-tools python3-libguestfs virt-top && \
-    for drv in qemu network nodedev nwfilter secret storage interface; do systemctl enable virt${drv}d{,-ro,-admin}.socket; done && \
+RUN dnf install -y xz yq podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm microshift-gitops microshift-observability dialog \
+                   cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
+    systemctl enable microshift && \
+    systemctl enable microshift-observability && \
+    systemctl enable cockpit.socket && \
     dnf clean all
 
 COPY files/ /
@@ -39,15 +45,11 @@ RUN chmod +x /usr/local/bin/* && \
     ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
     ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
 
-
-
-################################################################################
-# v2 (splitted here for demo)
-################################################################################
-
-#RUN dnf install -y cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
-#    systemctl enable cockpit.socket && \
-#    firewall-offline-cmd --zone=public --add-port=9090/tcp && \
-#    dnf clean all
-
+RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
+    firewall-offline-cmd --zone=trusted --add-source=169.254.169.1 && \
+    firewall-offline-cmd --zone=public --add-port=22/tcp && \
+    firewall-offline-cmd --zone=public --add-port=80/tcp && \
+    firewall-offline-cmd --zone=public --add-port=443/tcp && \
+    firewall-offline-cmd --zone=public --add-port=6443/tcp && \
+    firewall-offline-cmd --zone=public --add-port=30000-32767/tcp
 

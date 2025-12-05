@@ -1,0 +1,4 @@
+- if:
+  - path: /etc/flightctl/config.yaml
+    op: [created, updated, removed]
+  run: systemctl restart flightctl-agent.service

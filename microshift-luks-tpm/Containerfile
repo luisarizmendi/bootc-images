@@ -1,6 +1,6 @@
 ARG BASE_IMAGE_TAG='9.6'
 ARG USHIFT_VER='4.20'
-ARG ACM_VER='2.14'
+ARG ACM_VER='2.15'
 ########################################
 FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
 
