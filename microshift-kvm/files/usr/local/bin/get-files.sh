@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: get-files.sh [config-file]
 
 VERSION="1.0.0"
-DEFAULT_CONFIG="/etc/get-files.yaml"
+DEFAULT_CONFIG="/etc/get-files/config.yaml"
 CONFIG_FILE="${1:-$DEFAULT_CONFIG}"
 LOG_ENABLED="${LOG_ENABLED:-1}"
 
@@ -234,7 +234,7 @@ parse_config() {
     
     if [[ ! -f "$config" ]]; then
         log_error "Configuration file not found: $config"
-        exit 1
+        exit 0
     fi
     
     log_info "Processing configuration file: $config"

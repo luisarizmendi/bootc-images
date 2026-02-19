@@ -41,6 +41,7 @@ start_enrollment_monitor() {
             
             if check_enrollment; then
                 log "Device has been enrolled. Stopping file monitor service."
+                systemctl disable --now hook-files.service
                 # Send SIGTERM to main process
                 kill -TERM "$$" 2>/dev/null || true
                 exit 0

@@ -1,17 +1,15 @@
 ARG BASE_IMAGE_TAG='9.6'
-ARG ACM_VER='2.14'
+
 ########################################
 FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
-
-ARG ACM_VER
 
 ################################################################################
 #Red Hat Edge Manager
 ################################################################################
 
 RUN dnf config-manager \
-        --set-enabled rhacm-${ACM_VER}-for-rhel-9-$(uname -m)-rpms && \
-    dnf -y install flightctl-agent flightctl && \
+        --set-enabled edge-manager-1.0-for-rhel-9-$(uname -m)-rpms && \
+    dnf -y install flightctl-agent flightctl-cli && \
     dnf -y clean all && \
     systemctl enable flightctl-agent.service && \
     systemctl mask bootc-fetch-apply-updates.timer 
@@ -45,9 +43,9 @@ RUN chmod +x /usr/local/bin/* && \
 # v2 (splitted here for demo)
 ################################################################################
 
-RUN dnf install -y cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
-    systemctl enable cockpit.socket && \
-    firewall-offline-cmd --zone=public --add-port=9090/tcp && \
-    dnf clean all
+#RUN dnf install -y cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
+#    systemctl enable cockpit.socket && \
+#    firewall-offline-cmd --zone=public --add-port=9090/tcp && \
+#    dnf clean all
 
 

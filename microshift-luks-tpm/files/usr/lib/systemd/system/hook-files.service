@@ -7,7 +7,7 @@ Wants=network-pre.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/hook-files.sh
-Restart=always
+Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal

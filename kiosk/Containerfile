@@ -1,17 +1,16 @@
 ARG BASE_IMAGE_TAG='9.6'
-ARG ACM_VER='2.14'
+
 ########################################
 FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
 
-ARG ACM_VER
 
 ################################################################################
 #Red Hat Edge Manager
 ################################################################################
 
 RUN dnf config-manager \
-        --set-enabled rhacm-${ACM_VER}-for-rhel-9-$(uname -m)-rpms && \
-    dnf -y install flightctl-agent flightctl && \
+        --set-enabled edge-manager-1.0-for-rhel-9-$(uname -m)-rpms && \
+    dnf -y install flightctl-agent flightctl-cli && \
     dnf -y clean all && \
     systemctl enable flightctl-agent.service && \
     systemctl mask bootc-fetch-apply-updates.timer 
@@ -29,7 +28,7 @@ RUN dnf config-manager \
 
 RUN useradd -m -d /var/home/kiosk kiosk 
 
-RUN dnf install -y stress shadow-utils gnome-kiosk gdm gnome-kiosk-script-session  git firefox \
+RUN dnf install -y yq stress shadow-utils gnome-kiosk gdm gnome-kiosk-script-session  git firefox \
     && dnf clean all
 
 RUN mkdir -p /var/home/kiosk/.local/bin/ /etc/accountsservice/user-templates /etc/gdm/
@@ -47,6 +46,6 @@ RUN systemctl set-default graphical.target
 #////////////////////////////////////////
 #DEMO V2 update (tmux )
 #////////////////////////////////////////
-RUN dnf install -y tmux && \
-    dnf clean all
+#RUN dnf install -y tmux && \
+#    dnf clean all
 #////////////////////////////////////////

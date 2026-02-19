@@ -10,13 +10,13 @@
 
 
 files:
-    # test-vm disk
-  - type: https
-    source: https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2
-    destination: /var/lib/libvirt/images/test-vm.raw
-    owner: qemu:qemu
-    mode: "0755"
-    selinux_context: system_u:object_r:svirt_image_t:s0:c140,c832
+    ## test-vm disk
+ # - type: https
+ #   source: https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2
+ #   destination: /var/lib/libvirt/images/test-vm.raw
+ #   owner: qemu:qemu
+ #   mode: "0755"
+ #   selinux_context: system_u:object_r:svirt_image_t:s0:c140,c832
 
 ##################################################################
 ## EXAMPLES
