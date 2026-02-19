@@ -244,39 +244,100 @@ artifacts: true|false|auto    # default: auto (create if none exist)
 # Specify artifact formats (default: anaconda-iso)
 artifact_formats: anaconda-iso,qcow2,vmdk
 
-# Reuse the same version tag (default: false)
+# Reuse the same version tag instead of incrementing (default: false)
 keep_version: false
+
+# Map GitHub secret names to Buildah secret IDs for use in Containerfile RUN --mount=type=secret
+# Format: GITHUB_SECRET_NAME:buildah-secret-id  (comma-separated for multiple)
+secrets: MY_SECRET:path/to/secret
 ```
 
-Examples restricting an image to specific architectures:
+---
+
+#### `platforms`
+
+Restricts which architectures the image (and its artifacts) are built for.
 
 ```yaml
 # Build only for ARM64
 platforms: linux/arm64
 ```
-
 ```yaml
-# Build only for AMD64  
+# Build only for AMD64
 platforms: linux/amd64
 ```
-
 ```yaml
-# Build for both architectures (same as no .buildconfig file)
+# Build for both (same as omitting this option)
 platforms: linux/amd64,linux/arm64
 ```
 
-Example controlling Artifact Creation:
+---
+
+#### `artifacts`
+
+Controls whether installable artifacts (e.g. ISO, qcow2) are created from the image.
 
 ```yaml
-# Always create artifacts
+# Always create artifacts on every build
 artifacts: true
-artifact_formats: anaconda-iso,qcow2
 
 # Never create artifacts
 artifacts: false
 
-# Create artifacts only if none exist yet (default behavior)
+# Create artifacts only if none exist yet in the registry (default)
 artifacts: auto
+```
+
+When `artifacts: true` or `artifacts: auto`, you can specify which formats to build:
+
+```yaml
+artifacts: true
+artifact_formats: anaconda-iso,qcow2
+```
+
+Supported formats: `anaconda-iso`, `qcow2`, `vmdk`, `raw`, `ami`, `vhd`, `gce`
+
+---
+
+#### `keep_version`
+
+By default, each build increments the version tag (`v1` → `v2` → `v3`...).
+Set `keep_version: true` to always overwrite the current version instead of creating a new one.
+Useful for images that are frequently rebuilt but don't need a full version history.
+
+```yaml
+keep_version: true
+```
+
+---
+
+#### `secrets`
+
+Maps GitHub repository secret names to Buildah secret IDs, so they can be consumed
+in your `Containerfile` via `RUN --mount=type=secret,id=<secret-id>`.
+
+Format: `GITHUB_SECRET_NAME:buildah-secret-id`, comma-separated for multiple secrets.
+
+```yaml
+# Single secret
+secrets: MY_GITLAB_TOKEN:myrepo/TOKEN
+
+# Multiple secrets
+secrets: MY_GITLAB_TOKEN:myrepo/TOKEN,ANOTHER_SECRET:other/secret
+```
+
+Then reference them in your `Containerfile`:
+
+```dockerfile
+RUN --mount=type=secret,id=myrepo/TOKEN \
+    cat /run/secrets/myrepo/TOKEN
+```
+
+The GitHub secret name (left of `:`) is the name as set in **Settings → Secrets → Actions**
+in your repository. The secret ID (right of `:`) is the path used inside the container at
+`/run/secrets/<secret-id>`. To add a new secret, create it in GitHub and reference it in
+`.buildconfig` — no changes to the workflow file are needed.
+
 ```
 
 ### config.toml File for Artifact Customization

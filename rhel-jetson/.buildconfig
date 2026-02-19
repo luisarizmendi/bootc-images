@@ -15,3 +15,7 @@ platforms: linux/arm64
 # Valid values: true, false
 # When true, keeps the existing version instead of incrementing (default: false)
 keep_version: false
+
+##### SECRETS FOR THE CONTAINERFILE
+#secrets: AUTH:jetpack-artifact-rhel96-secret/TOKEN,OTHER_SECRET:some-other/PATH
+secrets: AUTH:jetpack-artifact-rhel96-secret/TOKEN
