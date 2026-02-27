@@ -18,4 +18,4 @@ keep_version: false
 
 ##### SECRETS FOR THE CONTAINERFILE
 #secrets: AUTH:jetpack-artifact-rhel96-secret/TOKEN,OTHER_SECRET:some-other/PATH
-secrets: AUTH:jetpack-artifact-rhel96-secret
+build_args:: AUTH:jetpack-artifact-rhel96-secret

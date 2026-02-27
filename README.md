@@ -320,10 +320,10 @@ Format: `GITHUB_SECRET_NAME:buildah-secret-id`, comma-separated for multiple sec
 
 ```yaml
 # Single secret
-secrets: MY_GITLAB_TOKEN:myrepo/TOKEN
+secrets: MY_GITLAB_TOKEN:myrepo_secret
 
 # Multiple secrets
-secrets: MY_GITLAB_TOKEN:myrepo/TOKEN,ANOTHER_SECRET:other/secret
+secrets: MY_GITLAB_TOKEN:myrepo_secret,ANOTHER_SECRET:other
 ```
 
 Then reference them in your `Containerfile`:
