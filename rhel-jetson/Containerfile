@@ -1,7 +1,7 @@
 # Builds a basic RHEL Bootc image for NVIDIA Tegra SOC with Nvidia CDI enabled
 ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.7
 FROM ${BASE} AS build
-#ARG AUTH=jetpack-artifact-rhel96-secret
+ARG AUTH
 
 RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
   dnf install -y \
