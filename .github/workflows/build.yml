@@ -562,11 +562,13 @@ jobs:
           echo "NEXT_TAG=$NEXT_TAG" | tee -a "$GITHUB_ENV"
           echo "next=$NEXT_TAG" >> "$GITHUB_OUTPUT"
 
+      # ---------------------------------------------------------------------------
       # Reads "secrets = GH_SECRET_NAME:buildah-secret-id,..." from .buildconfig
       # and writes each secret value to a temp file, then assembles the secrets
-      # input string for the buildah-build action — no hardcoding needed in the
-      # workflow. Adding a new secret only requires updating .buildconfig and
-      # adding the secret in GitHub repo settings.
+      # input string for the buildah-build action.
+      # If no secrets are defined in .buildconfig, secrets_input will be empty
+      # and buildah will simply receive no --secret flags.
+      # ---------------------------------------------------------------------------
       - name: Write build secrets to temp files
         id: secrets
         shell: bash
@@ -630,6 +632,77 @@ jobs:
           # look them up by name dynamically without any hardcoding in the workflow.
           ALL_SECRETS: ${{ toJson(secrets) }}
 
+      # ---------------------------------------------------------------------------
+      # Reads "build_args = ARG_NAME:GH_SECRET_NAME,..." from .buildconfig
+      # and assembles --build-arg flags for buildah.
+      # Use this for non-sensitive config values you need as ARG in Containerfile.
+      # For sensitive secrets (tokens, passwords) use the secrets: key instead.
+      #
+      # .buildconfig example:
+      #   build_args: MY_ARG:MY_GITHUB_SECRET,OTHER_ARG:OTHER_GITHUB_SECRET
+      #
+      # Containerfile usage:
+      #   ARG MY_ARG
+      #   RUN echo "Value is: ${MY_ARG}"
+      # ---------------------------------------------------------------------------
+      - name: Write build args from secrets
+        id: build_args
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD_ARGS_INPUT=""
+
+          if [ -f "./${{ matrix.dir }}/.buildconfig" ]; then
+            BUILD_ARGS_CONFIG=$(grep -E '^build_args\s*[:=]\s*' "./${{ matrix.dir }}/.buildconfig" \
+              | sed -E 's/^build_args\s*[:=]\s*//' | tr -d "'" | tr -d ' ' || echo "")
+
+            if [ -n "$BUILD_ARGS_CONFIG" ]; then
+              IFS=',' read -ra ARG_PAIRS <<< "$BUILD_ARGS_CONFIG"
+              for pair in "${ARG_PAIRS[@]}"; do
+                # Left side  = ARG name in Containerfile
+                # Right side = GitHub secret name
+                ARG_NAME="${pair%%:*}"
+                GH_SECRET_NAME="${pair#*:}"
+
+                if [ -z "$ARG_NAME" ] || [ -z "$GH_SECRET_NAME" ]; then
+                  echo "WARNING: Malformed build_arg pair '$pair', skipping"
+                  continue
+                fi
+
+                # Look up the secret value by name from the full secrets JSON blob
+                SECRET_VALUE=$(echo "$ALL_SECRETS" | jq -r --arg key "$GH_SECRET_NAME" '.[$key] // empty')
+
+                if [ -z "$SECRET_VALUE" ]; then
+                  echo "WARNING: GitHub secret '$GH_SECRET_NAME' is empty or not set, skipping"
+                  continue
+                fi
+
+                if [ -n "$BUILD_ARGS_INPUT" ]; then
+                  BUILD_ARGS_INPUT+=$'\n'
+                fi
+                BUILD_ARGS_INPUT+="${ARG_NAME}=${SECRET_VALUE}"
+
+                echo "Registered build arg: $ARG_NAME (from GitHub secret $GH_SECRET_NAME)"
+              done
+            else
+              echo "No build_args defined in .buildconfig for ${{ matrix.dir }}"
+            fi
+          else
+            echo "No .buildconfig found for ${{ matrix.dir }}, skipping build args setup"
+          fi
+
+          # Write as multiline output using heredoc delimiter
+          {
+            echo "build_args_input<<EOF"
+            echo "$BUILD_ARGS_INPUT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          # Pass ALL repository secrets as a single JSON blob so the script can
+          # look them up by name dynamically without any hardcoding in the workflow.
+          ALL_SECRETS: ${{ toJson(secrets) }}
+
       - name: Build platform-specific image with Buildah
         id: build
         uses: redhat-actions/buildah-build@v2
@@ -643,6 +716,7 @@ jobs:
           context: ./${{ matrix.dir }}
           containerfiles: |
             ./${{ matrix.dir }}/Containerfile
+          build-args: ${{ steps.build_args.outputs.build_args_input }}
           secrets: ${{ steps.secrets.outputs.secrets_input }}
 
       - name: Clean up secret temp files
@@ -1249,4 +1323,5 @@ jobs:
           echo "- \`artifacts: true|false|auto\` - Enable/disable artifact creation (default: auto - create if none exist)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`artifact_formats: anaconda-iso,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`secrets: GH_SECRET_NAME:buildah-secret-id,...\` - Map GitHub secrets to Buildah secret IDs (e.g. AUTH:myrepo/TOKEN)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`secrets: GH_SECRET_NAME:buildah-secret-id,...\` - Map GitHub secrets to Buildah secret IDs for use with --mount=type=secret in Containerfile" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`build_args: ARG_NAME:GH_SECRET_NAME,...\` - Map GitHub secrets to Containerfile ARGs via --build-arg (use for non-sensitive config only)" >> "$GITHUB_STEP_SUMMARY"
