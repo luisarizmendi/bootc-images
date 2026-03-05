@@ -19,8 +19,15 @@ ARG EXTRA_KARGS="isolcpus=1 nohz_full=1 rcu_nocbs=1 intel_pstate=disable process
 # REALTIME KERNEL
 #################################################
 
-RUN dnf -y install 'dnf-command(config-manager)' && \
-    dnf config-manager --set-enabled rt nfv
+RUN dnf -y install 'dnf-command(config-manager)'
+
+RUN ARCH=$(uname -m) && \
+    case "$ARCH" in \
+        x86_64) RT_REPO="rhel-9-for-x86_64-rt-kernel-rpms" ;; \
+        aarch64) RT_REPO="rhel-9-for-aarch64-rt-kernel-rpms" ;; \
+        *) echo "Unsupported architecture: $ARCH" && exit 1 ;; \
+    esac && \
+    dnf config-manager --set-enabled $RT_REPO
 
 RUN rpm-ostree override remove kernel kernel-core kernel-modules kernel-modules-core \
     --install kernel-rt-core \
