@@ -407,6 +407,8 @@ jobs:
               BUILD_ARGS=$(get_build_args "$DIR")
               echo "Directory $DIR build_args: ${BUILD_ARGS:-<none>}"
 
+              # Get build secrets (comma-separated secret names, empty string if none)
+
               IFS=',' read -ra ALLOWED_PLATFORM_ARRAY <<< "$ALLOWED_PLATFORMS"
 
               for PLATFORM in "${ALLOWED_PLATFORM_ARRAY[@]}"; do
@@ -620,42 +622,21 @@ jobs:
           echo "NEXT_TAG=$NEXT_TAG" | tee -a "$GITHUB_ENV"
           echo "next=$NEXT_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve build args for ${{ matrix.image_name }}
-        id: build_args
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # matrix.build_args is a comma-separated KEY=VALUE string (empty if none)
-          RAW_ARGS="${{ matrix.build_args }}"
-
-          if [ -z "$RAW_ARGS" ]; then
-            echo "No build args defined for this image."
-            # Write an empty multiline output (valid heredoc with no body)
-            {
-              echo "build_arg_list<<EOF"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-          else
-            echo "Raw build args: $RAW_ARGS"
-            # redhat-actions/buildah-build expects build-args as a newline-separated
-            # list of KEY=VALUE pairs (NOT --build-arg flags).
-            # Write them to a multiline output using the heredoc delimiter syntax.
-            {
-              echo "build_arg_list<<EOF"
-              IFS=',' read -ra ARG_PAIRS <<< "$RAW_ARGS"
-              for pair in "${ARG_PAIRS[@]}"; do
-                pair=$(echo "$pair" | xargs)   # trim surrounding whitespace
-                [ -z "$pair" ] && continue
-                echo "$pair"
-                echo "  Adding build arg: $pair" >&2
-              done
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Build platform-specific image with Buildah
         id: build
+        shell: bash
+        env:
+          # ── Build-time secrets ──────────────────────────────────────────────
+          # Secrets are always available to every build. Containerfiles that do
+          # not use a secret simply never reference it — no harm done.
+          # To add a new secret:
+          #   1. Add it in GitHub repo Settings → Secrets and variables → Actions
+          #   2. Add one line here:  SECRET_<n>: ${{ secrets.<n> }}
+          #   3. Add the mount block in the run: script below (copy the pattern)
+          #   4. Use it in your Containerfile: RUN --mount=type=secret,id=<n>
+          # ────────────────────────────────────────────────────────────────────
+          SECRET_GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          # SECRET_MY_OTHER_SECRET: ${{ secrets.MY_OTHER_SECRET }}
         run: |
           set -euo pipefail
 
@@ -684,32 +665,24 @@ jobs:
             done
           fi
 
-          # Build --secret flags dynamically from the comma-separated secret names
-          # declared in .buildconfig (build_secrets: SECRET_NAME).
-          # Each name maps to a GitHub Actions secret named GHA_SECRET_<n>.
-          # The value is written to a temp file and cleaned up on EXIT —
-          # it never appears in any image layer or build log.
+          # ── Secret mounts ───────────────────────────────────────────────────
+          # Each secret is written to a temp file and passed to buildah via
+          # --secret id=<n>,src=<file>. The file is deleted on EXIT.
+          # Secrets are available in the Containerfile as:
+          #   RUN --mount=type=secret,id=<n> cat /run/secrets/<n>
+          # Only secrets with a non-empty value are mounted.
+          # To add a new secret: copy the if-block below and update the name.
+          # ────────────────────────────────────────────────────────────────────
           SECRET_FLAGS=()
           SECRET_TMPDIR=$(mktemp -d)
           trap 'rm -rf "$SECRET_TMPDIR"' EXIT
 
-          RAW_SECRETS="${{ matrix.build_secrets }}"
-          if [ -n "$RAW_SECRETS" ]; then
-            IFS=',' read -ra SECRET_NAMES <<< "$RAW_SECRETS"
-            for secret_name in "${SECRET_NAMES[@]}"; do
-              secret_name=$(echo "$secret_name" | xargs)
-              [ -z "$secret_name" ] && continue
-              env_var="GHA_SECRET_${secret_name}"
-              secret_value="${!env_var:-}"
-              if [ -z "$secret_value" ]; then
-                echo "WARNING: secret '$secret_name' declared in .buildconfig but GHA_SECRET_${secret_name} is not set in repo secrets — skipping"
-                continue
-              fi
-              printf '%s' "$secret_value" > "$SECRET_TMPDIR/$secret_name"
-              SECRET_FLAGS+=(--secret "id=${secret_name},src=$SECRET_TMPDIR/$secret_name")
-              echo "  Mounting secret: $secret_name"
-            done
+          if [ -n "${SECRET_GITLAB_TOKEN:-}" ]; then
+            printf '%s' "$SECRET_GITLAB_TOKEN" > "$SECRET_TMPDIR/GITLAB_TOKEN"
+            SECRET_FLAGS+=(--secret "id=GITLAB_TOKEN,src=$SECRET_TMPDIR/GITLAB_TOKEN")
+            echo "  Mounting secret: GITLAB_TOKEN"
           fi
+          # Copy the if-block above for each additional secret
 
           echo "Building image: $IMAGE_NAME"
           echo "Tags: ${TAGS[*]}"
@@ -1253,26 +1226,6 @@ jobs:
 
             echo "$all_args"
           }
-
-          get_build_secrets() {
-            local dir="$1"
-
-            if [ ! -f "$dir/.buildconfig" ]; then
-              echo ""
-              return
-            fi
-
-            local all_secrets
-            all_secrets=$(grep -E '^build_secrets\s*[:=]\s*' "$dir/.buildconfig" \
-              | sed -E 's/^build_secrets\s*[:=]\s*//' \
-              | tr -d '"\'' \
-              | sed 's/[[:space:]]//g' \
-              | tr '\n' ',' \
-              | sed 's/,$//')
-
-            echo "$all_secrets"
-          }
-
           get_artifact_config() {
             local dir="$1"
             local default_formats="${{ needs.setup.outputs.formats }}"
@@ -1325,7 +1278,6 @@ jobs:
             ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
             KEEP_VERSION=$(get_keep_version "$DIR")
             BUILD_ARGS=$(get_build_args "$DIR")
-            BUILD_SECRETS=$(get_build_secrets "$DIR")
             
             EXTRA_INFO=""
             if [ "$ALLOWED_PLATFORMS" != "${{ needs.setup.outputs.platforms }}" ]; then
@@ -1343,13 +1295,6 @@ jobs:
                 EXTRA_INFO="$EXTRA_INFO, build_args: $BUILD_ARGS"
               else
                 EXTRA_INFO="build_args: $BUILD_ARGS"
-              fi
-            fi
-            if [ -n "$BUILD_SECRETS" ]; then
-              if [ -n "$EXTRA_INFO" ]; then
-                EXTRA_INFO="$EXTRA_INFO, build_secrets: $BUILD_SECRETS"
-              else
-                EXTRA_INFO="build_secrets: $BUILD_SECRETS"
               fi
             fi
             
@@ -1404,4 +1349,3 @@ jobs:
           echo "- \`artifact_formats: anaconda-iso,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`build_args: KEY=VALUE\` - Pass build arguments to Buildah (repeat the line for multiple args)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`build_secrets: SECRET_NAME\` - Mount a GitHub Actions secret during build via --mount=type=secret (repeat the line for multiple secrets; name the secret GHA_SECRET_<NAME> in repo settings)" >> "$GITHUB_STEP_SUMMARY"
