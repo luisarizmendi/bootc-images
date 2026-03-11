@@ -7,10 +7,7 @@ ARG TEST
 RUN echo "Esta es: ${TEST}" > /tmp/cat 
 RUN cat /tmp/cat 
 
-RUN --mount=type=secret,id=GITLAB_TOKEN \
-    ls /run/secrets/
-RUN --mount=type=secret,id=GITLAB_TOKEN \
-    ls /run/secrets/GITLAB_TOKEN/
+
 
 RUN --mount=type=secret,id=GITLAB_TOKEN \
     mkdir -p /etc/mysecrets && \
