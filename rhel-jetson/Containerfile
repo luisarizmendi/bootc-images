@@ -78,3 +78,8 @@ RUN sed -i '/ConditionVirtualization=vm/d' /usr/lib/systemd/system/bootc-generic
 RUN cat <<EOF > /usr/lib/bootc/kargs.d/10-jetson.toml
 kargs = ["console=ttyTCU0,115200"]
 EOF
+
+##########
+
+### Copy files
+COPY files/ /
