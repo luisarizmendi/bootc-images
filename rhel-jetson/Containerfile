@@ -1,23 +1,6 @@
 # Builds a basic RHEL Bootc image for NVIDIA Tegra SOC with Nvidia CDI enabled
 ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.7
 FROM ${BASE} AS build
-ARG TEST
-
-
-RUN echo "Esta es: ${TEST}" > /tmp/cat 
-RUN cat /tmp/cat 
-
-
-
-RUN --mount=type=secret,id=GITLAB_TOKEN \
-    mkdir -p /etc/mysecrets && \
-    cp /run/secrets/GITLAB_TOKEN /etc/mysecrets/password && \
-    chmod 600 /etc/mysecrets/password
-
-# Separate RUN - the file should persist since it was copied into the image layer
-RUN test -s /etc/mysecrets/password && echo "File exists and is non-empty" || echo "File missing or empty"
-
-
 
 RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
   dnf install -y \
@@ -32,15 +15,12 @@ RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
     rpmdevtools \
     yum-utils
 
-
-
-
 # Build Jetpack drivers using the BootC Image Kernel version
-RUN --mount=type=secret,id=${AUTH}/TOKEN \
+RUN --mount=type=secret,id=GITLAB_TOKEN \
     export QA_RPATHS=$(( 0x0001|0x0010 )) && \
     export XDG_CONFIG_HOME=$(mktemp -d) && \
     mkdir -p $XDG_CONFIG_HOME/git && \
-    echo "https://dummy:$(cat /run/secrets/${AUTH}/TOKEN | tr -d '\n')@gitlab.com" \
+    echo "https://dummy:$(/run/secrets/GITLAB_TOKEN | tr -d '\n')@gitlab.com" \
     > $XDG_CONFIG_HOME/git/credentials && \
     git config --global credential.helper store && \
     git lfs install && \
