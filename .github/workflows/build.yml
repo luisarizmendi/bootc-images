@@ -146,6 +146,33 @@ jobs:
             echo "false"
           }
 
+          # Function to get build args for a directory
+          # Reads one or more lines of the form:
+          #   build_args: KEY1=VALUE1,KEY2=VALUE2
+          # or multiple lines:
+          #   build_args: KEY1=VALUE1
+          #   build_args: KEY2=VALUE2
+          # Returns a comma-separated KEY=VALUE string (safe for matrix JSON)
+          get_build_args() {
+            local dir="$1"
+
+            if [ ! -f "$dir/.buildconfig" ]; then
+              echo ""
+              return
+            fi
+
+            # Collect all build_args lines, strip key prefix, trim whitespace
+            local all_args
+            all_args=$(grep -E '^build_args\s*[:=]\s*' "$dir/.buildconfig" \
+              | sed -E 's/^build_args\s*[:=]\s*//' \
+              | tr -d '"'"'" \
+              | sed 's/[[:space:]]//g' \
+              | tr '\n' ',' \
+              | sed 's/,$//')
+
+            echo "$all_args"
+          }
+
           # Function to get artifact configuration for a directory
           get_artifact_config() {
             local dir="$1"
@@ -376,6 +403,10 @@ jobs:
               KEEP_VERSION=$(get_keep_version "$DIR")
               echo "Directory $DIR keep_version: $KEEP_VERSION"
 
+              # Get build args (comma-separated KEY=VALUE pairs, empty string if none)
+              BUILD_ARGS=$(get_build_args "$DIR")
+              echo "Directory $DIR build_args: ${BUILD_ARGS:-<none>}"
+
               IFS=',' read -ra ALLOWED_PLATFORM_ARRAY <<< "$ALLOWED_PLATFORMS"
 
               for PLATFORM in "${ALLOWED_PLATFORM_ARRAY[@]}"; do
@@ -402,7 +433,7 @@ jobs:
 
                 if [ $first -eq 0 ]; then MATRIX+=","; fi
                 first=0
-                MATRIX+="{\"platform\":\"$PLATFORM\",\"arch\":\"$ARCH\",\"runner\":\"$RUNNER\",\"dir\":\"$DIR\",\"image_name\":\"$IMAGE_NAME\",\"keep_version\":\"$KEEP_VERSION\"}"
+                MATRIX+="{\"platform\":\"$PLATFORM\",\"arch\":\"$ARCH\",\"runner\":\"$RUNNER\",\"dir\":\"$DIR\",\"image_name\":\"$IMAGE_NAME\",\"keep_version\":\"$KEEP_VERSION\",\"build_args\":\"$BUILD_ARGS\"}"
               done
 
               # Handle artifact configuration
@@ -589,6 +620,33 @@ jobs:
           echo "NEXT_TAG=$NEXT_TAG" | tee -a "$GITHUB_ENV"
           echo "next=$NEXT_TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve build args for ${{ matrix.image_name }}
+        id: build_args
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # matrix.build_args is a comma-separated KEY=VALUE string (empty if none)
+          RAW_ARGS="${{ matrix.build_args }}"
+
+          if [ -z "$RAW_ARGS" ]; then
+            echo "No build args defined for this image."
+            echo "build_arg_flags=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Raw build args: $RAW_ARGS"
+            # Convert "KEY1=VALUE1,KEY2=VALUE2" → "--build-arg KEY1=VALUE1 --build-arg KEY2=VALUE2"
+            FLAGS=""
+            IFS=',' read -ra ARG_PAIRS <<< "$RAW_ARGS"
+            for pair in "${ARG_PAIRS[@]}"; do
+              pair=$(echo "$pair" | xargs)   # trim surrounding whitespace
+              [ -z "$pair" ] && continue
+              FLAGS="$FLAGS --build-arg $pair"
+              echo "  Adding build arg: $pair"
+            done
+            FLAGS=$(echo "$FLAGS" | xargs)   # trim leading space
+            echo "build_arg_flags=$FLAGS" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build platform-specific image with Buildah
         id: build
         uses: redhat-actions/buildah-build@v2
@@ -602,6 +660,7 @@ jobs:
           context: ./${{ matrix.dir }}
           containerfiles: |
             ./${{ matrix.dir }}/Containerfile
+          build-args: ${{ steps.build_args.outputs.build_arg_flags }}
 
       - name: Log in to GitHub Container Registry
         uses: redhat-actions/podman-login@v1
@@ -1108,6 +1167,25 @@ jobs:
             echo "false"
           }
 
+          get_build_args() {
+            local dir="$1"
+
+            if [ ! -f "$dir/.buildconfig" ]; then
+              echo ""
+              return
+            fi
+
+            local all_args
+            all_args=$(grep -E '^build_args\s*[:=]\s*' "$dir/.buildconfig" \
+              | sed -E 's/^build_args\s*[:=]\s*//' \
+              | tr -d '"'"'" \
+              | sed 's/[[:space:]]//g' \
+              | tr '\n' ',' \
+              | sed 's/,$//')
+
+            echo "$all_args"
+          }
+
           get_artifact_config() {
             local dir="$1"
             local default_formats="${{ needs.setup.outputs.formats }}"
@@ -1159,6 +1237,7 @@ jobs:
             IMAGE_NAME=$(get_image_name "$DIR")
             ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
             KEEP_VERSION=$(get_keep_version "$DIR")
+            BUILD_ARGS=$(get_build_args "$DIR")
             
             EXTRA_INFO=""
             if [ "$ALLOWED_PLATFORMS" != "${{ needs.setup.outputs.platforms }}" ]; then
@@ -1169,6 +1248,13 @@ jobs:
                 EXTRA_INFO="$EXTRA_INFO, keep_version: true"
               else
                 EXTRA_INFO="keep_version: true"
+              fi
+            fi
+            if [ -n "$BUILD_ARGS" ]; then
+              if [ -n "$EXTRA_INFO" ]; then
+                EXTRA_INFO="$EXTRA_INFO, build_args: $BUILD_ARGS"
+              else
+                EXTRA_INFO="build_args: $BUILD_ARGS"
               fi
             fi
             
@@ -1222,3 +1308,10 @@ jobs:
           echo "- \`artifacts: true|false|auto\` - Enable/disable artifact creation (default: auto - create if none exist)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`artifact_formats: anaconda-iso,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`build_args: KEY=VALUE\` - Pass build arguments to Buildah (repeat the line for multiple args)" >> "$GITHUB_STEP_SUMMARY"
+
+
+
+
+
+          
