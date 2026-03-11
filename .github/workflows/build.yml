@@ -636,6 +636,8 @@ jobs:
           #   4. Use it in your Containerfile: RUN --mount=type=secret,id=<n>
           # ────────────────────────────────────────────────────────────────────
           SECRET_GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          SECRET_WIFI_SSID: ${{ secrets.WIFI_SSID}}
+          SECRET_WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
           # SECRET_MY_OTHER_SECRET: ${{ secrets.MY_OTHER_SECRET }}
         run: |
           set -euo pipefail
@@ -681,6 +683,16 @@ jobs:
             printf '%s' "$SECRET_GITLAB_TOKEN" > "$SECRET_TMPDIR/GITLAB_TOKEN"
             SECRET_FLAGS+=(--secret "id=GITLAB_TOKEN,src=$SECRET_TMPDIR/GITLAB_TOKEN")
             echo "  Mounting secret: GITLAB_TOKEN"
+          fi
+          if [ -n "${SECRET_WIFI_SSID:-}" ]; then
+            printf '%s' "$SECRET_WIFI_SSID" > "$SECRET_TMPDIR/WIFI_SSID"
+            SECRET_FLAGS+=(--secret "id=WIFI_SSID,src=$SECRET_TMPDIR/WIFI_SSID")
+            echo "  Mounting secret: WIFI_SSID"
+          fi
+          if [ -n "${SECRET_WIFI_PASSWORD:-}" ]; then
+            printf '%s' "$SECRET_WIFI_PASSWORD" > "$SECRET_TMPDIR/WIFI_PASSWORD"
+            SECRET_FLAGS+=(--secret "id=WIFI_PASSWORD,src=$SECRET_TMPDIR/WIFI_PASSWORD")
+            echo "  Mounting secret: WIFI_PASSWORD"
           fi
           # Copy the if-block above for each additional secret
 
