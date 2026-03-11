@@ -24,5 +24,4 @@ keep_version: false
 #build_args: APP_VERSION=2.1.0
 #build_args: ENABLE_FIPS=true
 
-build_args: TEST=jetpack-artifact-rhel96-secret
 

@@ -36,18 +36,18 @@ FROM ${BASE}
 
 # Install NVIDIA jetpack components
 RUN --mount=from=build,target=/build \
-    sudo dnf -y install bsdtar && \
-    sudo dnf -y install /build/src/rpmbuild/RPMS/aarch64/*.rpm && \
-    sudo dnf clean all
+     dnf -y install bsdtar && \
+     dnf -y install /build/src/rpmbuild/RPMS/aarch64/*.rpm && \
+     dnf clean all
 
 # Regenerate initrd (just in case)
 RUN set -x; kver=$(cd /usr/lib/modules && echo *); dracut -vf /usr/lib/modules/$kver/initramfs.img $kver
 
 # Install NVIDIA container toolkit
 RUN curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo | \
-    sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo && \
-    sudo dnf -y install nvidia-container-toolkit && \
-    sudo dnf clean all
+     tee /etc/yum.repos.d/nvidia-container-toolkit.repo && \
+     dnf -y install nvidia-container-toolkit && \
+     dnf clean all
 
 # Create and enable a systemd service to generate the NVIDIA CDI YAML file
 RUN cat <<EOF > /etc/systemd/system/nvidia-cdi.service
