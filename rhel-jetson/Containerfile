@@ -25,7 +25,6 @@ RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
 
 
 
-
 RUN --mount=type=secret,id=${AUTH}/TOKEN \
     ls /run/secrets/
 RUN --mount=type=secret,id=${AUTH}/TOKEN \
