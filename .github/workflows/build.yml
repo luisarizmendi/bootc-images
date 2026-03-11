@@ -40,7 +40,7 @@ jobs:
       has_artifacts: ${{ steps.setup.outputs.has_artifacts }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -547,7 +547,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Get container tools in UBI builder
         run: dnf -y install podman buildah skopeo jq
@@ -656,20 +656,79 @@ jobs:
 
       - name: Build platform-specific image with Buildah
         id: build
-        uses: redhat-actions/buildah-build@v2
-        with:
-          image: ${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}
-          tags: |
-            latest-${{ matrix.arch }}
-            ${{ github.sha }}-${{ matrix.arch }}
-            ${{ steps.version.outputs.next }}-${{ matrix.arch }}
-          platforms: ${{ matrix.platform }}
-          context: ./${{ matrix.dir }}
-          containerfiles: |
-            ./${{ matrix.dir }}/Containerfile
-          # build-args must be a newline-separated list of KEY=VALUE pairs.
-          # An empty string here is safe — buildah-build ignores it.
-          build-args: ${{ steps.build_args.outputs.build_arg_list }}
+        run: |
+          set -euo pipefail
+
+          IMAGE_NAME="${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}"
+          TAGS=(
+            "latest-${{ matrix.arch }}"
+            "${{ github.sha }}-${{ matrix.arch }}"
+            "${{ steps.version.outputs.next }}-${{ matrix.arch }}"
+          )
+
+          # Build --tag flags
+          TAG_FLAGS=()
+          for tag in "${TAGS[@]}"; do
+            TAG_FLAGS+=(--tag "$IMAGE_NAME:$tag")
+          done
+
+          # Build --build-arg flags from the comma-separated matrix value
+          BUILD_ARG_FLAGS=()
+          RAW_ARGS="${{ matrix.build_args }}"
+          if [ -n "$RAW_ARGS" ]; then
+            IFS=',' read -ra ARG_PAIRS <<< "$RAW_ARGS"
+            for pair in "${ARG_PAIRS[@]}"; do
+              pair=$(echo "$pair" | xargs)
+              [ -z "$pair" ] && continue
+              BUILD_ARG_FLAGS+=(--build-arg "$pair")
+            done
+          fi
+
+          # Build --secret flags dynamically from the comma-separated secret names
+          # declared in .buildconfig (build_secrets: SECRET_NAME).
+          # Each name maps to a GitHub Actions secret named GHA_SECRET_<n>.
+          # The value is written to a temp file and cleaned up on EXIT —
+          # it never appears in any image layer or build log.
+          SECRET_FLAGS=()
+          SECRET_TMPDIR=$(mktemp -d)
+          trap 'rm -rf "$SECRET_TMPDIR"' EXIT
+
+          RAW_SECRETS="${{ matrix.build_secrets }}"
+          if [ -n "$RAW_SECRETS" ]; then
+            IFS=',' read -ra SECRET_NAMES <<< "$RAW_SECRETS"
+            for secret_name in "${SECRET_NAMES[@]}"; do
+              secret_name=$(echo "$secret_name" | xargs)
+              [ -z "$secret_name" ] && continue
+              env_var="GHA_SECRET_${secret_name}"
+              secret_value="${!env_var:-}"
+              if [ -z "$secret_value" ]; then
+                echo "WARNING: secret '$secret_name' declared in .buildconfig but GHA_SECRET_${secret_name} is not set in repo secrets — skipping"
+                continue
+              fi
+              printf '%s' "$secret_value" > "$SECRET_TMPDIR/$secret_name"
+              SECRET_FLAGS+=(--secret "id=${secret_name},src=$SECRET_TMPDIR/$secret_name")
+              echo "  Mounting secret: $secret_name"
+            done
+          fi
+
+          echo "Building image: $IMAGE_NAME"
+          echo "Tags: ${TAGS[*]}"
+          echo "Build args: ${BUILD_ARG_FLAGS[*]:-<none>}"
+          echo "Secrets mounted: ${#SECRET_FLAGS[@]} secret(s)"
+
+          buildah build \
+            --platform "${{ matrix.platform }}" \
+            --file "./${{ matrix.dir }}/Containerfile" \
+            "${TAG_FLAGS[@]}" \
+            "${BUILD_ARG_FLAGS[@]+"${BUILD_ARG_FLAGS[@]}"}" \
+            "${SECRET_FLAGS[@]+"${SECRET_FLAGS[@]}"}" \
+            "./${{ matrix.dir }}"
+
+          # Emit outputs for the push step
+          echo "image=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          printf 'tags<<EOF\n' >> "$GITHUB_OUTPUT"
+          for tag in "${TAGS[@]}"; do printf '%s\n' "$tag"; done >> "$GITHUB_OUTPUT"
+          printf 'EOF\n' >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: redhat-actions/podman-login@v1
@@ -714,7 +773,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Get container tools in UBI builder
         run: |
@@ -978,7 +1037,7 @@ jobs:
       IMAGE_PREFIX: "${{ needs.setup.outputs.image_prefix }}"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Log in to GitHub Container Registry
         uses: redhat-actions/podman-login@v1
@@ -1142,7 +1201,7 @@ jobs:
       IMAGE_PREFIX: "${{ needs.setup.outputs.image_prefix }}"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Print build summary
         shell: bash
@@ -1193,6 +1252,25 @@ jobs:
               | sed 's/,$//')
 
             echo "$all_args"
+          }
+
+          get_build_secrets() {
+            local dir="$1"
+
+            if [ ! -f "$dir/.buildconfig" ]; then
+              echo ""
+              return
+            fi
+
+            local all_secrets
+            all_secrets=$(grep -E '^build_secrets\s*[:=]\s*' "$dir/.buildconfig" \
+              | sed -E 's/^build_secrets\s*[:=]\s*//' \
+              | tr -d '"\'' \
+              | sed 's/[[:space:]]//g' \
+              | tr '\n' ',' \
+              | sed 's/,$//')
+
+            echo "$all_secrets"
           }
 
           get_artifact_config() {
@@ -1247,6 +1325,7 @@ jobs:
             ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
             KEEP_VERSION=$(get_keep_version "$DIR")
             BUILD_ARGS=$(get_build_args "$DIR")
+            BUILD_SECRETS=$(get_build_secrets "$DIR")
             
             EXTRA_INFO=""
             if [ "$ALLOWED_PLATFORMS" != "${{ needs.setup.outputs.platforms }}" ]; then
@@ -1264,6 +1343,13 @@ jobs:
                 EXTRA_INFO="$EXTRA_INFO, build_args: $BUILD_ARGS"
               else
                 EXTRA_INFO="build_args: $BUILD_ARGS"
+              fi
+            fi
+            if [ -n "$BUILD_SECRETS" ]; then
+              if [ -n "$EXTRA_INFO" ]; then
+                EXTRA_INFO="$EXTRA_INFO, build_secrets: $BUILD_SECRETS"
+              else
+                EXTRA_INFO="build_secrets: $BUILD_SECRETS"
               fi
             fi
             
@@ -1318,3 +1404,4 @@ jobs:
           echo "- \`artifact_formats: anaconda-iso,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`build_args: KEY=VALUE\` - Pass build arguments to Buildah (repeat the line for multiple args)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`build_secrets: SECRET_NAME\` - Mount a GitHub Actions secret during build via --mount=type=secret (repeat the line for multiple secrets; name the secret GHA_SECRET_<NAME> in repo settings)" >> "$GITHUB_STEP_SUMMARY"
