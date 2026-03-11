@@ -26,9 +26,3 @@ keep_version: false
 
 build_args: TEST=jetpack-artifact-rhel96-secret
 
-# Pass a GitHub Actions secret into the build as a mountable secret.
-# The name must match exactly the secret name in your repo settings.
-# Repeat the line for multiple secrets.
-#build_secrets: MY_PASSWORD
-#build_secrets: MY_SECRET
-build_secrets: GITLAB_TOKEN
