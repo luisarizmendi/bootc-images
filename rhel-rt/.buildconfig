@@ -1,0 +1,10 @@
+# .buildconfig file for restricting builds to specific architectures
+
+#platforms: linux/amd64
+
+#artifact_formats: qcow2
+
+##### VERSION MANAGEMENT
+# Valid values: true, false
+# When true, keeps the existing version instead of incrementing (default: false)
+keep_version: false

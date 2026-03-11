@@ -1,0 +1,91 @@
+FROM registry.redhat.io/rhel9/rhel-bootc:9.6
+
+# Real-Time
+#################################################
+# DEFAUTLS
+#################################################
+ARG RTCPU_LIST=1
+ARG TARGET_PROFILE=realtime
+ARG EXTRA_KARGS="isolcpus=1 nohz_full=1 rcu_nocbs=1 intel_pstate=disable processor.max_cstate=1"
+
+#################################################
+# REALTIME KERNEL
+#################################################
+
+RUN dnf -y install 'dnf-command(config-manager)'
+
+RUN case $(uname -m) in \
+        x86_64) RT_REPO="rhel-9-for-x86_64-rt-rpms" ;; \
+        aarch64) RT_REPO="rhel-9-for-aarch64-rt-rpms" ;; \
+        *) echo "Unsupported architecture: $ARCH" && exit 1 ;; \
+    esac && \
+    dnf config-manager --set-enabled $RT_REPO
+
+RUN rpm-ostree override remove kernel kernel-core kernel-modules kernel-modules-core \
+    --install kernel-rt-core \
+    --install kernel-rt-modules \
+    --install kernel-rt-kvm
+
+#################################################
+# REALTIME PACKAGES
+#################################################
+
+RUN dnf install -y \
+    tuned \
+    tuned-profiles-nfv \
+    realtime-tests \
+    rtla \
+    stress-ng \
+    trace-cmd \
+    hwloc \
+    tmux
+
+RUN systemctl enable tuned
+RUN systemctl disable irqbalance
+
+#################################################
+# REALTIME BOOT PARAMETERS MULTI-ARCH
+#################################################
+
+RUN rm -f /usr/lib/bootc/kargs.d/*.toml ;\
+  # x86_64 kargs
+  echo -e "kargs=[\"iommu=pt\"]\nmatch-architectures=[\"x86_64\"]" \
+      > /usr/lib/bootc/kargs.d/01-iommu-x86.toml ; \
+  echo -e "kargs=[\"intel_iommu=on\"]\nmatch-architectures=[\"x86_64\"]" \
+      > /usr/lib/bootc/kargs.d/02-intel-iommu-x86.toml ; \
+  echo -e "kargs=[\"idle=poll\"]\nmatch-architectures=[\"x86_64\"]" \
+      > /usr/lib/bootc/kargs.d/03-idle-x86.toml ; \
+  echo -e "kargs=[\"rcutree.nocb_patience_delay=1000\"]\nmatch-architectures=[\"x86_64\"]" \
+      > /usr/lib/bootc/kargs.d/04-rcu-x86.toml ; \
+  echo -e "kargs=[\"console=ttyS1,115200\"]\nmatch-architectures=[\"x86_64\"]" \
+      > /usr/lib/bootc/kargs.d/05-console-x86.toml ; \
+  # aarch64 kargs
+  echo -e "kargs=[\"idle=poll\"]\nmatch-architectures=[\"aarch64\"]" \
+      > /usr/lib/bootc/kargs.d/03-idle-arm.toml ; \
+  echo -e "kargs=[\"rcutree.nocb_patience_delay=1000\"]\nmatch-architectures=[\"aarch64\"]" \
+      > /usr/lib/bootc/kargs.d/04-rcu-arm.toml ; \
+  echo -e "kargs=[\"console=tty0 console=ttyAMA0,115200n81\"]\nmatch-architectures=[\"aarch64\"]" \
+      > /usr/lib/bootc/kargs.d/05-console-arm.toml ; \
+  # extra args aplicable a cualquier arquitectura
+  echo -e "kargs=[\"${EXTRA_KARGS}\"]" \
+      > /usr/lib/bootc/kargs.d/99-extra-kargs.toml
+
+#################################################
+# REALTIME TUNING (FIRST BOOT)
+#################################################
+
+COPY rt-tuning-first-boot.sh /usr/local/sbin/custom-rt-tuning-first-boot.sh
+RUN chmod +x /usr/local/sbin/custom-rt-tuning-first-boot.sh
+
+COPY rt-post-install-tuning.service /usr/lib/systemd/system/rt-post-install-tuning.service
+RUN systemctl enable rt-post-install-tuning
+
+# Reemplaza placeholder por el profile real
+RUN sed -i "s/<profile_name>/${TARGET_PROFILE}/" \
+    /usr/local/sbin/custom-rt-tuning-first-boot.sh
+
+# Configura CPUs aisladas en el profile
+RUN sed -i "s/^isolated_cores.*/isolated_cores=${RTCPU_LIST}/" \
+    /etc/tuned/${TARGET_PROFILE}-variables.conf
+
+
