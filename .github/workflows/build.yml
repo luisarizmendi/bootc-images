@@ -631,20 +631,27 @@ jobs:
 
           if [ -z "$RAW_ARGS" ]; then
             echo "No build args defined for this image."
-            echo "build_arg_flags=" >> "$GITHUB_OUTPUT"
+            # Write an empty multiline output (valid heredoc with no body)
+            {
+              echo "build_arg_list<<EOF"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
           else
             echo "Raw build args: $RAW_ARGS"
-            # Convert "KEY1=VALUE1,KEY2=VALUE2" → "--build-arg KEY1=VALUE1 --build-arg KEY2=VALUE2"
-            FLAGS=""
-            IFS=',' read -ra ARG_PAIRS <<< "$RAW_ARGS"
-            for pair in "${ARG_PAIRS[@]}"; do
-              pair=$(echo "$pair" | xargs)   # trim surrounding whitespace
-              [ -z "$pair" ] && continue
-              FLAGS="$FLAGS --build-arg $pair"
-              echo "  Adding build arg: $pair"
-            done
-            FLAGS=$(echo "$FLAGS" | xargs)   # trim leading space
-            echo "build_arg_flags=$FLAGS" >> "$GITHUB_OUTPUT"
+            # redhat-actions/buildah-build expects build-args as a newline-separated
+            # list of KEY=VALUE pairs (NOT --build-arg flags).
+            # Write them to a multiline output using the heredoc delimiter syntax.
+            {
+              echo "build_arg_list<<EOF"
+              IFS=',' read -ra ARG_PAIRS <<< "$RAW_ARGS"
+              for pair in "${ARG_PAIRS[@]}"; do
+                pair=$(echo "$pair" | xargs)   # trim surrounding whitespace
+                [ -z "$pair" ] && continue
+                echo "$pair"
+                echo "  Adding build arg: $pair" >&2
+              done
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build platform-specific image with Buildah
@@ -660,7 +667,9 @@ jobs:
           context: ./${{ matrix.dir }}
           containerfiles: |
             ./${{ matrix.dir }}/Containerfile
-          build-args: ${{ steps.build_args.outputs.build_arg_flags }}
+          # build-args must be a newline-separated list of KEY=VALUE pairs.
+          # An empty string here is safe — buildah-build ignores it.
+          build-args: ${{ steps.build_args.outputs.build_arg_list }}
 
       - name: Log in to GitHub Container Registry
         uses: redhat-actions/podman-login@v1
@@ -1309,9 +1318,3 @@ jobs:
           echo "- \`artifact_formats: anaconda-iso,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`build_args: KEY=VALUE\` - Pass build arguments to Buildah (repeat the line for multiple args)" >> "$GITHUB_STEP_SUMMARY"
-
-
-
-
-
-          
