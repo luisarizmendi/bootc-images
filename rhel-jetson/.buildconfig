@@ -16,6 +16,12 @@ platforms: linux/arm64
 # When true, keeps the existing version instead of incrementing (default: false)
 keep_version: false
 
-##### SECRETS FOR THE CONTAINERFILE
-#secrets: AUTH:jetpack-artifact-rhel96-secret/TOKEN,OTHER_SECRET:some-other/PATH
-build_args:: AUTH:jetpack-artifact-rhel96-secret
+# Single arg
+#build_args: BASE_IMAGE=registry.example.com/mybase:latest
+
+# Multiple args — repeat the key
+#build_args: BASE_IMAGE=registry.example.com/mybase:latest
+#build_args: APP_VERSION=2.1.0
+#build_args: ENABLE_FIPS=true
+
+build_args: AUTH=jetpack-artifact-rhel96-secret
