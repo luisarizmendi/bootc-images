@@ -3,6 +3,13 @@ ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.7
 FROM ${BASE} AS build
 ARG AUTH
 
+
+
+RUN echo "Esta es: ${AUTH}" > /tmp/cat 
+RUN cat /tmp/cat 
+
+
+
 RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
   dnf install -y \
     createrepo \
@@ -16,8 +23,9 @@ RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
     rpmdevtools \
     yum-utils
 
-RUN echo "Esta es: ${AUTH}" > /tmp/cat 
-RUN cat /tmp/cat 
+
+
+
 RUN --mount=type=secret,id=${AUTH}/TOKEN \
     ls /run/secrets/
 RUN --mount=type=secret,id=${AUTH}/TOKEN \
