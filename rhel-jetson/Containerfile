@@ -1,13 +1,11 @@
 # Builds a basic RHEL Bootc image for NVIDIA Tegra SOC with Nvidia CDI enabled
 ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.7
 FROM ${BASE} AS build
-ARG AUTH
+ARG TEST
 
 
-
-RUN echo "Esta es: ${AUTH}" > /tmp/cat 
+RUN echo "Esta es: ${TEST}" > /tmp/cat 
 RUN cat /tmp/cat 
-
 
 
 RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
@@ -25,10 +23,16 @@ RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
 
 
 
-RUN --mount=type=secret,id=${AUTH}/TOKEN \
+RUN --mount=type=secret,id=GITLAB_TOKEN \
     ls /run/secrets/
-RUN --mount=type=secret,id=${AUTH}/TOKEN \
-    ls /run/secrets/${AUTH}/
+RUN --mount=type=secret,id=GITLAB_TOKEN \
+    ls /run/secrets/GITLAB_TOKEN/
+
+RUN --mount=type=secret,id=GITLAB_TOKEN \
+    mkdir -p /etc/mysecrets && \
+    cp /run/secrets/GITLAB_TOKEN /etc/mysecrets/password && \
+    cat /etc/mysecrets/password
+
 
 
 # Build Jetpack drivers using the BootC Image Kernel version
