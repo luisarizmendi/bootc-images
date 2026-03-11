@@ -24,6 +24,8 @@ Store your images in designated folders within the repository's root directory. 
    - Runs in a subscribed UBI9 container with container tools installed
    - Registers with Red Hat using credentials or activation keys
    - Uses `buildah` to build multi-platform bootc images
+   - Passes `ARG` build arguments declared in `.buildconfig`
+   - Mounts build-time secrets declared in the workflow for use via `--mount=type=secret`
    - Creates semantic version tags (v1, v2, v3, etc.)
    - Automatically unregisters subscription when complete
 
@@ -89,7 +91,7 @@ If it's placed elsewhere, GitHub Actions will **not** detect it.
 
 Then create directories at the root level with your different images. Example directory structure:
 
-**Note:** More information about the `.buildconfig ` in a section below.
+**Note:** More information about the `.buildconfig` in a section below.
 
 ```
 my-arm64-only-image/
@@ -157,7 +159,7 @@ If you need different credentials for pulling from registry.redhat.io:
    - `SOURCE_REGISTRY_PASSWORD`: Registry password (defaults to `RH_PASSWORD`)
 
 
-### 6. (Optional) Override other paremeters
+### 6. (Optional) Override other parameters
 
 1. Go to **Repository Settings** → **Secrets and variables** → **Actions**.
 2. Under **Variables**, add any of these that you want to override:
@@ -234,7 +236,7 @@ ls -la artifacts/
 
 You can control build behavior by adding a `.buildconfig` file to any image directory:
 
-```yaml
+```ini
 # Restrict platforms (default: linux/amd64,linux/arm64)
 platforms: linux/arm64
 
@@ -247,9 +249,9 @@ artifact_formats: anaconda-iso,qcow2,vmdk
 # Reuse the same version tag instead of incrementing (default: false)
 keep_version: false
 
-# Map GitHub secret names to Buildah secret IDs for use in Containerfile RUN --mount=type=secret
-# Format: GITHUB_SECRET_NAME:buildah-secret-id  (comma-separated for multiple)
-secrets: MY_SECRET:path/to/secret
+# Pass ARG values to buildah at build time (repeat the line for multiple args)
+build_args: MY_ARG=some_value
+build_args: ANOTHER_ARG=other_value
 ```
 
 ---
@@ -258,15 +260,15 @@ secrets: MY_SECRET:path/to/secret
 
 Restricts which architectures the image (and its artifacts) are built for.
 
-```yaml
+```ini
 # Build only for ARM64
 platforms: linux/arm64
 ```
-```yaml
+```ini
 # Build only for AMD64
 platforms: linux/amd64
 ```
-```yaml
+```ini
 # Build for both (same as omitting this option)
 platforms: linux/amd64,linux/arm64
 ```
@@ -277,7 +279,7 @@ platforms: linux/amd64,linux/arm64
 
 Controls whether installable artifacts (e.g. ISO, qcow2) are created from the image.
 
-```yaml
+```ini
 # Always create artifacts on every build
 artifacts: true
 
@@ -290,7 +292,7 @@ artifacts: auto
 
 When `artifacts: true` or `artifacts: auto`, you can specify which formats to build:
 
-```yaml
+```ini
 artifacts: true
 artifact_formats: anaconda-iso,qcow2
 ```
@@ -305,40 +307,111 @@ By default, each build increments the version tag (`v1` → `v2` → `v3`...).
 Set `keep_version: true` to always overwrite the current version instead of creating a new one.
 Useful for images that are frequently rebuilt but don't need a full version history.
 
-```yaml
+```ini
 keep_version: true
 ```
 
 ---
 
-#### `secrets`
+#### `build_args`
 
-Maps GitHub repository secret names to Buildah secret IDs, so they can be consumed
-in your `Containerfile` via `RUN --mount=type=secret,id=<secret-id>`.
+Passes build-time `ARG` values to `buildah`. These are equivalent to `--build-arg KEY=VALUE`
+and are available in your Containerfile via `ARG KEY`.
 
-Format: `GITHUB_SECRET_NAME:buildah-secret-id`, comma-separated for multiple secrets.
+```ini
+# Single arg
+build_args: BASE_IMAGE=registry.example.com/mybase:latest
 
-```yaml
-# Single secret
-secrets: MY_GITLAB_TOKEN:myrepo_secret
-
-# Multiple secrets
-secrets: MY_GITLAB_TOKEN:myrepo_secret,ANOTHER_SECRET:other
+# Multiple args — repeat the line
+build_args: BASE_IMAGE=registry.example.com/mybase:latest
+build_args: APP_VERSION=2.1.0
 ```
 
-Then reference them in your `Containerfile`:
+Then reference them in your Containerfile:
 
 ```dockerfile
-RUN --mount=type=secret,id=myrepo/TOKEN \
-    cat /run/secrets/myrepo/TOKEN
+ARG BASE_IMAGE=registry.redhat.io/rhel9/rhel-bootc:9.7
+ARG APP_VERSION
+
+FROM ${BASE_IMAGE}
+RUN echo "Building version ${APP_VERSION}"
 ```
 
-The GitHub secret name (left of `:`) is the name as set in **Settings → Secrets → Actions**
-in your repository. The secret ID (right of `:`) is the path used inside the container at
-`/run/secrets/<secret-id>`. To add a new secret, create it in GitHub and reference it in
-`.buildconfig` — no changes to the workflow file are needed.
+> **Note:** Do not use `build_args` for sensitive values like passwords or tokens.
+> Use build-time secrets instead (see below).
 
+---
+
+### Build-time Secrets
+
+Secrets allow sensitive values (tokens, passwords, credentials) to be available during
+the build without being baked into the image layers or appearing in build logs.
+
+Secrets are **not** configured in `.buildconfig`. They are declared once in the workflow
+file and automatically mounted for every build. Containerfiles that do not reference a
+secret simply ignore it.
+
+#### How secrets work
+
+Each secret is:
+1. Read from a GitHub Actions repository secret
+2. Written to a temporary file during the build
+3. Mounted into the build environment via `--secret id=<n>,src=<file>`
+4. Deleted immediately after the build step completes
+5. **Never written into any image layer**
+
+The secret value is redacted in build logs (shown as `***`). The file you copy *into*
+the image (e.g. `/etc/mysecrets/token`) will be present in the final image — only the
+build-time mount mechanism itself is ephemeral.
+
+#### Adding a new secret
+
+To wire up a new secret, three things need to be in place:
+
+**1. Create the secret in GitHub**
+
+Go to **Repository Settings** → **Secrets and variables** → **Actions** and add a new
+repository secret, e.g. `GITLAB_TOKEN`.
+
+**2. Add it to the workflow `env:` block and mount script**
+
+In `.github/workflows/build.yml`, find the `Build platform-specific image with Buildah`
+step and add two blocks — one in `env:` and one in the secret mount section:
+
+```yaml
+env:
+  SECRET_GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+  # Add one line per secret:
+  # SECRET_MY_OTHER_SECRET: ${{ secrets.MY_OTHER_SECRET }}
 ```
+
+```bash
+if [ -n "${SECRET_GITLAB_TOKEN:-}" ]; then
+  printf '%s' "$SECRET_GITLAB_TOKEN" > "$SECRET_TMPDIR/GITLAB_TOKEN"
+  SECRET_FLAGS+=(--secret "id=GITLAB_TOKEN,src=$SECRET_TMPDIR/GITLAB_TOKEN")
+  echo "  Mounting secret: GITLAB_TOKEN"
+fi
+# Copy this block for each additional secret
+```
+
+**3. Use it in your Containerfile**
+
+```dockerfile
+# The secret is available as a file at /run/secrets/<id>
+RUN --mount=type=secret,id=GITLAB_TOKEN \
+    git clone https://oauth2:$(cat /run/secrets/GITLAB_TOKEN)@gitlab.com/myorg/myrepo.git /src
+
+# You can also copy the secret into the image (it will persist in the final image)
+RUN --mount=type=secret,id=GITLAB_TOKEN \
+    mkdir -p /etc/myapp && \
+    cp /run/secrets/GITLAB_TOKEN /etc/myapp/token && \
+    chmod 600 /etc/myapp/token
+```
+
+> **Important:** `/run/secrets/<id>` is a **file**, not a directory.
+> Do not add a trailing slash: `cat /run/secrets/GITLAB_TOKEN` ✅  `ls /run/secrets/GITLAB_TOKEN/` ❌
+
+---
 
 ### config.toml File for Artifact Customization
 
@@ -364,7 +437,7 @@ password = "redhat"
 groups = ["wheel"]
 ```
 
-Or the same file but with the password encripted with `openssl passwd -6 "redhat"`
+Or the same file but with the password encrypted with `openssl passwd -6 "redhat"`
 
 ```toml
 [[customizations.user]]
@@ -374,10 +447,6 @@ groups = ["wheel"]
 ```
 
 For more configuration options, consult the bootc-image-builder documentation.
-
-
-
-
 
 
 ---
