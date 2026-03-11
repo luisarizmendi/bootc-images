@@ -2,11 +2,11 @@ FROM registry.redhat.io/rhel9/rhel-bootc:9.6
 
 # Real-Time
 #################################################
-# DEFAUTLS
+# ARGS
 #################################################
-ARG RTCPU_LIST=1
-ARG TARGET_PROFILE=realtime
-ARG EXTRA_KARGS="isolcpus=1 nohz_full=1 rcu_nocbs=1 intel_pstate=disable processor.max_cstate=1"
+ARG RTCPU_LIST
+ARG TARGET_PROFILE
+ARG EXTRA_KARGS
 
 #################################################
 # REALTIME KERNEL
@@ -24,7 +24,7 @@ RUN case $(uname -m) in \
 RUN rpm-ostree override remove kernel kernel-core kernel-modules kernel-modules-core \
     --install kernel-rt-core \
     --install kernel-rt-modules \
-    --install kernel-rt-kvm
+    --install kernel-rt
 
 #################################################
 # REALTIME PACKAGES
