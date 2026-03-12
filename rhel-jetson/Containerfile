@@ -82,7 +82,8 @@ EOF
 ##########
 
 # Additional packages
-RUN dnf -y install NetworkManager-wifi
+# Issue?
+#RUN dnf -y install NetworkManager-wifi
 
 ### Copy files
 COPY files/ /
