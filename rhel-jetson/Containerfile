@@ -1,5 +1,5 @@
 # Builds a basic RHEL Bootc image for NVIDIA Tegra SOC with Nvidia CDI enabled
-ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.6
+ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.7
 FROM ${BASE} AS build
 
 RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
