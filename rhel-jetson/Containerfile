@@ -82,16 +82,17 @@ EOF
 ##########
 
 # Additional packages
-# Issue?
-#RUN dnf -y install NetworkManager-wifi
+RUN dnf -y install \
+            tmux \
+            git
 
 ### Copy files
 COPY files/ /
 
 ## Include WIFI config
-RUN --mount=type=secret,id=WIFI_SSID --mount=type=secret,id=WIFI_PASSWORD \
-    sed -i "s/YOUR_WIFI_NAME/$(cat /run/secrets/WIFI_SSID | tr -d '\n')/g" /etc/NetworkManager/system-connections/wifi.nmconnection  && \
-    sed -i "s/YOUR_WIFI_PASSWORD/$(cat /run/secrets/WIFI_PASSWORD | tr -d '\n')/g" /etc/NetworkManager/system-connections/wifi.nmconnection
+#RUN --mount=type=secret,id=WIFI_SSID --mount=type=secret,id=WIFI_PASSWORD \
+#    sed -i "s/YOUR_WIFI_NAME/$(cat /run/secrets/WIFI_SSID | tr -d '\n')/g" /etc/NetworkManager/system-connections/wifi.nmconnection  && \
+#    sed -i "s/YOUR_WIFI_PASSWORD/$(cat /run/secrets/WIFI_PASSWORD | tr -d '\n')/g" /etc/NetworkManager/system-connections/wifi.nmconnection
 
 RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
     chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
