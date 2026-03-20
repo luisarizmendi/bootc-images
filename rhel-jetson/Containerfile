@@ -1,5 +1,5 @@
 # Builds a basic RHEL Bootc image for NVIDIA Tegra SOC with Nvidia CDI enabled
-ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.7
+ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.6
 FROM ${BASE} AS build
 
 RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
@@ -83,18 +83,18 @@ EOF
 ##########
 
 # Additional packages
-#RUN dnf -y install \
-#            tmux \
-#            git
+RUN dnf -y install \
+            tmux \
+            git
 
 ### Copy files
-#COPY files/ /
+COPY files/ /
 
 ## Include WIFI config
 #RUN --mount=type=secret,id=WIFI_SSID --mount=type=secret,id=WIFI_PASSWORD \
 #    sed -i "s/YOUR_WIFI_NAME/$(cat /run/secrets/WIFI_SSID | tr -d '\n')/g" /etc/NetworkManager/system-connections/wifi.nmconnection  && \
 #    sed -i "s/YOUR_WIFI_PASSWORD/$(cat /run/secrets/WIFI_PASSWORD | tr -d '\n')/g" /etc/NetworkManager/system-connections/wifi.nmconnection
 
-#RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
-#    chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
-#    ln -s /etc/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service
+RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
+    chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
+    ln -s /etc/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service
