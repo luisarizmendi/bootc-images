@@ -73,33 +73,28 @@ RUN systemctl enable nvidia-cdi
 # so that the root partition is expanded to fill the entire disk
 RUN sed -i '/ConditionVirtualization=vm/d' /usr/lib/systemd/system/bootc-generic-growpart.service
 
-# Load the i2c-dev kernel module at boot
-# for jetson_stats
-RUN cat <<EOF > /etc/modules-load.d/i2c-dev.conf
-i2c-dev
-EOF
 
 # Add kernel arguments for Jetson devices
 # disable selinux, and set the correct console device
 RUN cat <<EOF > /usr/lib/bootc/kargs.d/10-jetson.toml
-kargs = ["enforcing=0", "console=ttyTCU0,115200"]
+kargs = ["console=ttyTCU0,115200"]
 EOF
 
 ##########
 
 # Additional packages
-RUN dnf -y install \
-            tmux \
-            git
+#RUN dnf -y install \
+#            tmux \
+#            git
 
 ### Copy files
-COPY files/ /
+#COPY files/ /
 
 ## Include WIFI config
 #RUN --mount=type=secret,id=WIFI_SSID --mount=type=secret,id=WIFI_PASSWORD \
 #    sed -i "s/YOUR_WIFI_NAME/$(cat /run/secrets/WIFI_SSID | tr -d '\n')/g" /etc/NetworkManager/system-connections/wifi.nmconnection  && \
 #    sed -i "s/YOUR_WIFI_PASSWORD/$(cat /run/secrets/WIFI_PASSWORD | tr -d '\n')/g" /etc/NetworkManager/system-connections/wifi.nmconnection
 
-RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
-    chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
-    ln -s /etc/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service
+#RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
+#    chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
+#    ln -s /etc/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service
