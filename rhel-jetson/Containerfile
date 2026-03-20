@@ -73,10 +73,16 @@ RUN systemctl enable nvidia-cdi
 # so that the root partition is expanded to fill the entire disk
 RUN sed -i '/ConditionVirtualization=vm/d' /usr/lib/systemd/system/bootc-generic-growpart.service
 
+# Load the i2c-dev kernel module at boot
+# for jetson_stats
+RUN cat <<EOF > /etc/modules-load.d/i2c-dev.conf
+i2c-dev
+EOF
+
 # Add kernel arguments for Jetson devices
 # disable selinux, and set the correct console device
 RUN cat <<EOF > /usr/lib/bootc/kargs.d/10-jetson.toml
-kargs = ["console=ttyTCU0,115200"]
+kargs = ["enforcing=0", "console=ttyTCU0,115200"]
 EOF
 
 ##########
