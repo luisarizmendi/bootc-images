@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xccdf:Tailoring xmlns:xccdf="http://checklists.nist.gov/xccdf/1.2" id="xccdf_scap-workbench_tailoring_default">
+  <xccdf:benchmark href="ssg-rhel9-ds.xml"/>
+  <xccdf:version time="1980-01-01T00:00:00">1</xccdf:version>
+  <xccdf:Profile id="xccdf_org.ssgproject.content_profile_cis_tailored" extends="xccdf_org.ssgproject.content_profile_cis">
+    <xccdf:title xmlns:xhtml="http://www.w3.org/1999/xhtml" xml:lang="en-US" override="true">CIS Red Hat Enterprise Linux 8 Benchmark [Tailored]</xccdf:title>
+    <xccdf:description xmlns:xhtml="http://www.w3.org/1999/xhtml" xml:lang="en-US" override="true">CIS Profile for RHEL 8 [Tailored]</xccdf:description>
+    <!---->
+
+    <!-- [EXCEPTION] CIS 1.1.5 Ensure noexec option set on /tmp partition -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_mount_option_tmp_noexec" selected="false"/>
+
+    <!-- [EXCEPTION] CIS 1.11 Ensure system-wide crypto policy is FUTURE or FIPS -->
+    <!-- Disabling this means we keep the default of DEFAULT, which is our preference -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_configure_crypto_policy" selected="false"/>
+
+    <!-- [TWEAKS] CIS 1.8.1.1 Ensure message of the day is configured properly -->
+    <!-- We don't want the default US Government text from these banners -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_banner_etc_motd" selected="false"/>
+    <!-- [TWEAKS] CIS 1.8.1.2 Ensure local login warning banner is configured properly -->
+    <!-- We don't want the default US Government text from these banners -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_banner_etc_issue" selected="false"/>
+
+    <!-- [TWEAKS] CIS 1.8.1.3 Ensure remote login warning banner is configured properly -->
+    <!-- CaC doesn't actually have a rule upstream for this yet but we will disable it when
+         it does. (See: https://github.com/ComplianceAsCode/content/issues/5225) -->
+    <!-- [TWEAKS] CIS 4.1.2.1 Ensure audit log storage size is configured -->
+    <xccdf:set-value idref="xccdf_org.ssgproject.content_value_var_auditd_max_log_file">10</xccdf:set-value>
+    <xccdf:set-value idref="xccdf_org.ssgproject.content_value_var_auditd_num_logs">100</xccdf:set-value>
+    <!-- [EXCEPTION] CIS 4.1.2.2 Ensure audit logs are not automatically deleted -->
+    <xccdf:set-value idref="xccdf_org.ssgproject.content_value_var_auditd_max_log_file_action">rotate</xccdf:set-value>
+    <!-- [EXCEPTION] CIS 4.1.2.3 Ensure system is disabled when audit logs are full -->
+    <xccdf:set-value idref="xccdf_org.ssgproject.content_value_var_auditd_space_left_action">syslog</xccdf:set-value>
+    <xccdf:set-value idref="xccdf_org.ssgproject.content_value_var_auditd_admin_space_left_action">syslog</xccdf:set-value>
+    <!-- [EXCEPTION] CIS 4.2.1.5 Ensure rsyslog is configured to send logs to a remote log host -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_rsyslog_remote_loghost" selected="false"/>
+    <!-- [EXCEPTION] CIS 4.2.3 Ensure permissions on all logfiles are configured -->
+    <!-- CaC doesn't actually have a rule upstream for this yet but we will disable it when
+         it does. (See: https://github.com/ComplianceAsCode/content/issues/5523) -->
+
+    <!-- [EXCEPTION] CIS 5.2.13 Ensure SSH Idle Timeout Interval is configured -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_sshd_set_idle_timeout" selected="false"/>
+
+    <!-- [EXCEPTION] CIS 5.5.3 Ensure default user shell timeout is 900 seconds or less -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_accounts_tmout" selected="false"/>
+
+    <!-- [ADDITION] Restrict access to kernel message buffer -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_dmesg_restrict" selected="true"/>
+
+    <!-- [ADDITION] Harden the operation of the BPF just-in-time compiler -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_sysctl_net_core_bpf_jit_harden" selected="true"/>
+
+    <!-- [ADDITION] Disallow Magic SysRq Key -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_sysrq" selected="true"/>
+
+    <!-- [ADDITION] Disable rhsmcertd service -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_service_rhsmcertd_disabled" selected="true"/>
+
+    <!-- [ADDITION] Disable Bluetooth service and kernel module -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_service_bluetooth_disabled" selected="true"/>
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_kernel_module_bluetooth_disabled" selected="true"/>
+
+    <!-- [ADDITION] Disable Access to Network bpf() Syscall From Unprivileged Processes -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_unprivileged_bpf_disabled" selected="true"/>
+
+    <!-- [ADDITION] Restrict access to kernel pointers via /proc and other interfaces -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_kptr_restrict" selected="true"/>
+
+    <!-- [ADDITION] Disable loading of kernel modules -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_modules_disabled" selected="true"/>
+
+    <!-- [ADDITION] Disallow some ftrace and kernel profiling features for users without CAP_SYS_ADMIN -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_perf_event_paranoid" selected="true"/>
+
+    <!-- [ADDITION] Restrict use of ptrace -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_yama_ptrace_scope" selected="true"/>
+
+    <!-- [ADDITION] Ensure chrony is installed and enabled for timesync -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_service_chronyd_enabled" selected="true"/>
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_package_chrony_installed" selected="true"/>
+
+    <!-- [ADDITION] Stop chronyd listening on UDP 323 port for network management purposes -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_chronyd_no_chronyc_network" selected="true"/>
+
+    <!-- [ADDITION] Ensure chronyd is not allowed to act as a timeserver -->
+    <xccdf:select idref="xccdf_org.ssgproject.content_rule_chronyd_client_only" selected="true"/>
+
+    <!---->
+  </xccdf:Profile>
+</xccdf:Tailoring>

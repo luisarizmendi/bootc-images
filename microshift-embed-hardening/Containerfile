@@ -1,0 +1,106 @@
+ARG BASE_IMAGE_TAG='9.6'
+ARG USHIFT_VER='4.20'
+ARG ACM_VER='2.15'
+########################################
+FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
+
+ARG ACM_VER
+ARG USHIFT_VER
+
+################################################################################
+#Red Hat Edge Manager
+################################################################################
+
+RUN dnf config-manager \
+        --set-enabled rhacm-${ACM_VER}-for-rhel-9-$(uname -m)-rpms && \
+    dnf -y install flightctl-agent flightctl && \
+    dnf -y clean all && \
+    systemctl enable flightctl-agent.service && \
+    systemctl mask bootc-fetch-apply-updates.timer 
+
+# Optional: To enable podman-compose application support, uncomment below
+ RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
+     dnf -y install podman-compose && \
+     dnf -y clean all && \
+     rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
+     systemctl enable podman.service
+
+################################################################################
+
+RUN dnf config-manager \
+        --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
+        --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms \
+        --set-enabled gitops-1.16-for-rhel-9-$(uname -m)-rpms
+
+RUN dnf install -y xz yq podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm microshift-gitops microshift-observability dialog \
+                   cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
+    systemctl enable microshift && \
+    systemctl enable microshift-observability && \
+    systemctl enable cockpit.socket && \
+    dnf clean all
+
+COPY files/ /
+
+RUN chmod +x /usr/local/bin/* && \
+    ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
+    ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
+
+RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
+    firewall-offline-cmd --zone=trusted --add-source=169.254.169.1 && \
+    firewall-offline-cmd --zone=public --add-port=22/tcp && \
+    firewall-offline-cmd --zone=public --add-port=80/tcp && \
+    firewall-offline-cmd --zone=public --add-port=443/tcp && \
+    firewall-offline-cmd --zone=public --add-port=6443/tcp && \
+    firewall-offline-cmd --zone=public --add-port=30000-32767/tcp
+
+################################################################################
+######################    EMBED IMAGES   #######################################
+################################################################################
+
+# Extracts the list of MicroShift container image dependencies
+ENV IMAGE_STORAGE_DIR=/usr/lib/containers/storage
+ENV IMAGE_LIST_FILE=${IMAGE_STORAGE_DIR}/image-list.txt
+
+RUN dnf install -y microshift-release-info
+RUN --mount=type=secret,id=PULL_SECRET,dst=/run/secrets/pull-secret.json \
+    images="$(jq -r ".images[]" /usr/share/microshift/release/release-"$(uname -m)".json)" ; \
+    mkdir -p "${IMAGE_STORAGE_DIR}" ; \
+    for img in ${images} ; do \
+        sha="$(echo "${img}" | sha256sum | awk '{print $1}')" ; \
+        skopeo copy --all --preserve-digests \
+            --authfile /run/secrets/pull-secret.json \
+            "docker://${img}" "dir:$IMAGE_STORAGE_DIR/${sha}" ; \
+        echo "${img},${sha}" >> "${IMAGE_LIST_FILE}" ; \
+    done
+
+# Copy container images from the custom directory to the main container storage
+RUN cat > /usr/bin/microshift-copy-images <<EOF
+#!/bin/bash
+set -eux -o pipefail
+while IFS="," read -r img sha ; do
+    skopeo copy --preserve-digests \
+        "dir:${IMAGE_STORAGE_DIR}/\${sha}" \
+        "containers-storage:\${img}"
+done < "${IMAGE_LIST_FILE}"
+EOF
+
+RUN chmod 755 /usr/bin/microshift-copy-images && \
+    mkdir -p /usr/lib/systemd/system/microshift.service.d
+
+RUN cat > /usr/lib/systemd/system/microshift.service.d/microshift-copy-images.conf <<EOF
+[Service]
+ExecStartPre=/usr/bin/microshift-copy-images
+EOF
+
+
+################################################################################
+######################   oscap-im  #######################################
+################################################################################
+
+RUN dnf install -y openscap-utils scap-security-guide && dnf clean all
+
+# Run scan and hardening
+RUN oscap-im --tailoring-file /usr/share/scap-cis-tailoring.xml --profile xccdf_org.ssgproject.content_profile_cis_tailored /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
+
+
+

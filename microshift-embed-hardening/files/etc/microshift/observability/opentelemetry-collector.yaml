@@ -1,0 +1,197 @@
+receivers:
+  kubeletstats:
+    auth_type: tls
+    ca_file: /var/lib/microshift/certs/ca-bundle/client-ca.crt
+    key_file: /var/lib/microshift/certs/admin-kubeconfig-signer/openshift-observability-client/client.key
+    cert_file: /var/lib/microshift/certs/admin-kubeconfig-signer/openshift-observability-client/client.crt
+    insecure_skip_verify: true
+    collection_interval: 10s
+    endpoint: "${env:K8S_NODE_NAME}:10250"
+    node: ${env:K8S_NODE_NAME}
+    k8s_api_config:
+      auth_type: kubeConfig
+  k8s_events:
+    auth_type: kubeConfig
+  hostmetrics:
+    scrapers:
+      system:
+        metrics:
+          system.uptime:
+            enabled: true
+      cpu:
+        metrics:
+          system.cpu.frequency:
+            enabled: true
+          system.cpu.logical.count:
+            enabled: true
+          system.cpu.physical.count:
+            enabled: true
+          system.cpu.time:
+            enabled: true
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.linux.memory.available:
+            enabled: true
+          system.linux.memory.dirty:
+            enabled: true
+          system.memory.limit:
+            enabled: true
+          system.memory.page_size:
+            enabled: true
+          system.memory.usage:
+            enabled: true
+          system.memory.utilization:
+            enabled: true
+      network:
+        exclude:
+          match_type: regexp
+          interfaces:
+            - veth.*
+            - '[a-f0-9]{15}'
+            - enP.*
+            - ovn-k8s-mp[0-9]*
+            - br-ex
+            - br-int
+            - br-ext
+            - br[0-9]*
+            - tun[0-9]*
+            - cali[a-f0-9]*
+        metrics:
+          system.network.connections:
+            enabled: true
+          system.network.conntrack.count:
+            enabled: true
+          system.network.conntrack.max:
+            enabled: true
+          system.network.dropped:
+            enabled: true
+          system.network.errors:
+            enabled: true
+          system.network.io:
+            enabled: true
+          system.network.packets:
+            enabled: true
+      disk:
+        exclude:
+          match_type: regexp
+          devices:
+          - sr.*
+          - dm-.*
+          - loop.*
+          - fd.*
+        metrics:
+          system.disk.io:
+            enabled: true
+          system.disk.io_time:
+            enabled: true
+          system.disk.merged:
+            enabled: true
+          system.disk.operation_time:
+            enabled: true
+          system.disk.operations:
+            enabled: true
+          system.disk.pending_operations:
+            enabled: true
+          system.disk.weighted_io_time:
+            enabled: true
+      filesystem:
+        metrics:
+          system.filesystem.inodes.usage:
+            enabled: true
+          system.filesystem.usage:
+            enabled: true
+          system.filesystem.utilization:
+            enabled: true
+      processes:
+        metrics:
+          system.processes.count:
+            enabled: true
+          system.processes.created:
+            enabled: true
+  journald:
+    units:
+      - microshift
+      - microshift-observability
+      - microshift-etcd
+      - crio
+      - openvswitch.service
+      - ovsdb-server.service
+      - ovs-vswitchd.service
+    priority: info
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: k8s
+          scrape_interval: 10s
+          kubernetes_sd_configs:
+            - kubeconfig_file: /var/lib/microshift/resources/observability-client/kubeconfig
+              role: pod
+          relabel_configs:
+              # Only scrape Pods with annotation "prometheus.io/scrape": "true"
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: keep
+              regex: true
+              # Use value of "prometheus.io/path" annotation for scraping
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+              action: replace
+              target_label: __metrics_path__
+              regex: (.+)
+              # Use value of "prometheus.io/port" annotation for scraping
+            - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+              action: replace
+              regex: ([^:]+)(?::\d+)?;(\d+)
+              replacement: $1:$2
+              target_label: __address__
+processors:
+  batch:
+  resourcedetection/system:
+    detectors: [ "system" ]
+    system:
+      hostname_sources: [ "os" ]
+exporters:
+  otlp:
+    sending_queue:
+      storage: file_storage
+    endpoint: ${env:OTEL_BACKEND}:4317 
+    tls:
+      insecure: true
+extensions:
+  file_storage:
+    directory: /var/lib/microshift-observability
+service:
+  extensions: [ file_storage ]
+  pipelines:
+    metrics/kubeletstats:
+      receivers: [ kubeletstats ]
+      processors: [ batch ]
+      exporters: [ otlp ]
+    metrics/hostmetrics:
+      receivers: [ hostmetrics ]
+      processors: [ resourcedetection/system, batch ]
+      exporters: [ otlp ]
+    logs/kube_events:
+      receivers: [ k8s_events ]
+      processors: [ resourcedetection/system, batch ]
+      exporters: [ otlp ]
+    logs/host:
+      receivers: [ hostmetrics ]
+      processors: [ resourcedetection/system ]
+      exporters: [ otlp ]
+    logs/journald:
+      receivers: [ journald ]
+      processors: [ resourcedetection/system ]
+      exporters: [ otlp ]
+    metrics/pods:
+      receivers: [ prometheus ]
+      processors: [ batch ]
+      exporters: [ otlp ]
+  telemetry:
+    metrics:
+      readers:
+        - periodic:
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                endpoint: http://${env:OTEL_BACKEND}:4318 

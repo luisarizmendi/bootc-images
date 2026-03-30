@@ -636,6 +636,7 @@ jobs:
           #   4. Use it in your Containerfile: RUN --mount=type=secret,id=<n>
           # ────────────────────────────────────────────────────────────────────
           SECRET_GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          SECRET_PULL_SECRET: ${{ secrets.PULL_SECRET }}
           SECRET_WIFI_SSID: ${{ secrets.WIFI_SSID}}
           SECRET_WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
           # SECRET_MY_OTHER_SECRET: ${{ secrets.MY_OTHER_SECRET }}
@@ -683,6 +684,11 @@ jobs:
             printf '%s' "$SECRET_GITLAB_TOKEN" > "$SECRET_TMPDIR/GITLAB_TOKEN"
             SECRET_FLAGS+=(--secret "id=GITLAB_TOKEN,src=$SECRET_TMPDIR/GITLAB_TOKEN")
             echo "  Mounting secret: GITLAB_TOKEN"
+          fi
+          if [ -n "${SECRET_PULL_SECRET:-}" ]; then
+            printf '%s' "$SECRET_PULL_SECRET" > "$SECRET_TMPDIR/PULL_SECRET"
+            SECRET_FLAGS+=(--secret "id=PULL_SECRET,src=$SECRET_TMPDIR/PULL_SECRET")
+            echo "  Mounting secret: PULL_SECRET"
           fi
           if [ -n "${SECRET_WIFI_SSID:-}" ]; then
             printf '%s' "$SECRET_WIFI_SSID" > "$SECRET_TMPDIR/WIFI_SSID"
