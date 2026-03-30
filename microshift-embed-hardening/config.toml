@@ -35,6 +35,11 @@ echo "Copied pre.log into installed system"
 
 %post --log=/var/log/anaconda/post-install.log
 set -ex
+
+# set admin account aging
+chage -I -1 -m 0 -M 99999 -E -1 admin
+
+
 echo "Setting up LVMS volume group..."
 
 # Detect the first non-removable physical disk

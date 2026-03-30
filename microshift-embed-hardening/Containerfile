@@ -84,4 +84,3 @@ RUN dnf install -y openscap-utils scap-security-guide && dnf clean all
 RUN oscap-im --tailoring-file /usr/share/scap-cis-tailoring.xml --profile xccdf_org.ssgproject.content_profile_cis_tailored /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
 
 
-
