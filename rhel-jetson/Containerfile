@@ -1,5 +1,5 @@
 # Builds a basic RHEL Bootc image for NVIDIA Tegra SOC with Nvidia CDI enabled
-ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.4
+FROM registry.redhat.io/rhel9/rhel-bootc:9.4-1730828483
 FROM ${BASE} AS build
 
 RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
@@ -15,21 +15,32 @@ RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
     rpmdevtools \
     yum-utils
 
+###########################################################################
 # Build Jetpack drivers using the BootC Image Kernel version
-RUN --mount=type=secret,id=GITLAB_TOKEN \
-    export QA_RPATHS=$(( 0x0001|0x0010 )) && \
-    export XDG_CONFIG_HOME=$(mktemp -d) && \
-    mkdir -p $XDG_CONFIG_HOME/git && \
-    echo "https://dummy:$(cat /run/secrets/GITLAB_TOKEN | tr -d '\n')@gitlab.com" \
-    > $XDG_CONFIG_HOME/git/credentials && \
-    git config --global credential.helper store && \
-    git lfs install && \
-    git clone https://gitlab.com/redhat/rhel/sst/orin-sidecar/nvidia-jetson-sidecar.git /src && \
-    sed -i "s|git@gitlab.com:|https://gitlab.com/|" /src/.gitmodules && \
-    make -C /src clean && \
-    make -C /src kmod-srpm kmod-rpm && \
-    make -C /src jetpack-srpms jetpack-rpms && \
-    rm -r $XDG_CONFIG_HOME
+#RUN --mount=type=secret,id=GITLAB_TOKEN \
+#    export QA_RPATHS=$(( 0x0001|0x0010 )) && \
+#    export XDG_CONFIG_HOME=$(mktemp -d) && \
+#    mkdir -p $XDG_CONFIG_HOME/git && \
+#    echo "https://dummy:$(cat /run/secrets/GITLAB_TOKEN | tr -d '\n')@gitlab.com" \
+#    > $XDG_CONFIG_HOME/git/credentials && \
+#    git config --global credential.helper store && \
+#    git lfs install && \
+#    git clone https://gitlab.com/redhat/rhel/sst/orin-sidecar/nvidia-jetson-sidecar.git /src && \
+#    sed -i "s|git@gitlab.com:|https://gitlab.com/|" /src/.gitmodules && \
+#    make -C /src clean && \
+#    make -C /src kmod-srpm kmod-rpm && \
+#    make -C /src jetpack-srpms jetpack-rpms && \
+#    rm -r $XDG_CONFIG_HOME
+
+RUN dnf -y install /tmp/artifact/*.rpm && \
+    dnf clean all && \
+    systemctl mask nvfancontrol.service nvpmodel.service nvpower.service && \
+    rm -r /tmp/artifact && \
+    rm /usr/lib/modules/*/kernel/drivers/gpu/host1x/host1x.ko.xz
+###########################################################################
+
+
+
 
 # The packages from NVIDIA's repo are only built for specific versions of RHEL, be sure to pin the exact tag
 FROM ${BASE}
