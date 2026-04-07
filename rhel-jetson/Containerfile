@@ -32,6 +32,11 @@ RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
 #    make -C /src jetpack-srpms jetpack-rpms && \
 #    rm -r $XDG_CONFIG_HOME
 
+
+
+# Container image with nvidia jetson RPMs
+COPY --from=quay.io/luisarizmendi/rhel-nvidia-jetson-rpms:9.4 /artifacts/ /tmp/artifact/
+
 RUN dnf -y install /tmp/artifact/*.rpm && \
     dnf clean all && \
     systemctl mask nvfancontrol.service nvpmodel.service nvpower.service && \
