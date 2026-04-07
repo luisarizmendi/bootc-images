@@ -1,5 +1,5 @@
 # Builds a basic RHEL Bootc image for NVIDIA Tegra SOC with Nvidia CDI enabled
-ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.7
+ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.4
 FROM ${BASE} AS build
 
 RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
@@ -73,6 +73,12 @@ RUN systemctl enable nvidia-cdi
 # so that the root partition is expanded to fill the entire disk
 RUN sed -i '/ConditionVirtualization=vm/d' /usr/lib/systemd/system/bootc-generic-growpart.service
 
+
+# Load the i2c-dev kernel module at boot
+# for jetson_stats
+RUN cat <<EOF > /etc/modules-load.d/i2c-dev.conf
+i2c-dev
+EOF
 
 # Add kernel arguments for Jetson devices
 # disable selinux, and set the correct console device
