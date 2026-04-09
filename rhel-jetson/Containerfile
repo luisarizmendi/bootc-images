@@ -1,38 +1,11 @@
 # Builds a basic RHEL Bootc image for NVIDIA Tegra SOC with Nvidia CDI enabled
-ARG BASE=registry.redhat.io/rhel9/rhel-bootc:9.4-1730828483
-FROM ${BASE} AS build
 
-RUN export KVER=$(rpm -q --queryformat "%{VERSION}-%{RELEASE}" kernel) && \
-  dnf install -y \
-    createrepo \
-    g++ \
-    git-lfs \
-    kernel-devel-${KVER} \
-    kernel-headers-${KVER} \
-    make \
-    python3-devel \
-    python3-rpm-macros \
-    rpmdevtools \
-    yum-utils
+# The packages from NVIDIA's repo are only built for specific versions of RHEL, be sure to pin the exact tag
+FROM registry.redhat.io/rhel9/rhel-bootc:9.4-1730828483
 
-###########################################################################
-# Build Jetpack drivers using the BootC Image Kernel version
-#RUN --mount=type=secret,id=GITLAB_TOKEN \
-#    export QA_RPATHS=$(( 0x0001|0x0010 )) && \
-#    export XDG_CONFIG_HOME=$(mktemp -d) && \
-#    mkdir -p $XDG_CONFIG_HOME/git && \
-#    echo "https://dummy:$(cat /run/secrets/GITLAB_TOKEN | tr -d '\n')@gitlab.com" \
-#    > $XDG_CONFIG_HOME/git/credentials && \
-#    git config --global credential.helper store && \
-#    git lfs install && \
-#    git clone https://gitlab.com/redhat/rhel/sst/orin-sidecar/nvidia-jetson-sidecar.git /src && \
-#    sed -i "s|git@gitlab.com:|https://gitlab.com/|" /src/.gitmodules && \
-#    make -C /src clean && \
-#    make -C /src kmod-srpm kmod-rpm && \
-#    make -C /src jetpack-srpms jetpack-rpms && \
-#    rm -r $XDG_CONFIG_HOME
-
-
+# Install NVIDIA jetpack components
+# Mask nvpower.service (causes kernel panic)
+# Remove upstream host1x kernel module (conflicts with nvidia provided one)
 
 # Container image with nvidia jetson RPMs
 COPY --from=quay.io/luisarizmendi/rhel-nvidia-jetson-rpms:9.4 /artifacts/ /tmp/artifact/
@@ -42,30 +15,18 @@ RUN dnf -y install /tmp/artifact/*.rpm && \
     systemctl mask nvfancontrol.service nvpmodel.service nvpower.service && \
     rm -r /tmp/artifact && \
     rm /usr/lib/modules/*/kernel/drivers/gpu/host1x/host1x.ko.xz
-###########################################################################
-
-
-
-
-# The packages from NVIDIA's repo are only built for specific versions of RHEL, be sure to pin the exact tag
-FROM ${BASE}
-
-###########################################################################
-## Install NVIDIA jetpack components
-#RUN --mount=from=build,target=/build \
-#     dnf -y install bsdtar && \
-#     dnf -y install /build/src/rpmbuild/RPMS/aarch64/*.rpm && \
-#     dnf clean all
-###########################################################################
 
 # Regenerate initrd (just in case)
 RUN set -x; kver=$(cd /usr/lib/modules && echo *); dracut -vf /usr/lib/modules/$kver/initramfs.img $kver
 
 # Install NVIDIA container toolkit
+# netavark is required for podman network to work
 RUN curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo | \
-     tee /etc/yum.repos.d/nvidia-container-toolkit.repo && \
-     dnf -y install nvidia-container-toolkit && \
-     dnf clean all
+    sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo && \
+    sudo dnf -y install \
+      netavark \
+      nvidia-container-toolkit && \
+    sudo dnf clean all
 
 # Create and enable a systemd service to generate the NVIDIA CDI YAML file
 RUN cat <<EOF > /etc/systemd/system/nvidia-cdi.service
