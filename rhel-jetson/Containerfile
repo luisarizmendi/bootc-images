@@ -67,8 +67,9 @@ EOF
 
 ##########
 
-# For camera
-RUN usermod -aG video admin
+# For camera we need to create the admin in the image
+RUN groupadd video && \
+    usermod -aG video admin
 
 # Additional packages
 RUN dnf -y install \
