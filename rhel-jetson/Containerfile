@@ -67,6 +67,9 @@ EOF
 
 ##########
 
+# For camera
+RUN groupadd video
+
 # Additional packages
 RUN dnf -y install \
             tmux \
