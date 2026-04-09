@@ -71,19 +71,19 @@ EOF
 RUN useradd admin && \
     usermod -aG video,wheel admin
 
-# Additional packages
-RUN dnf -y install \
-            tmux \
-            git 
-
-#            NetworkManager-wifi
-
 # To enable podman-compose application support
  RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
      dnf -y install podman-compose && \
      dnf -y clean all && \
      rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
      systemctl enable podman.service
+
+# Additional packages
+RUN dnf -y install \
+            tmux \
+            git && \
+    dnf -y clean all
+#            NetworkManager-wifi
 
 ### Copy files
 COPY files/ /
