@@ -50,11 +50,13 @@ RUN dnf -y install /tmp/artifact/*.rpm && \
 # The packages from NVIDIA's repo are only built for specific versions of RHEL, be sure to pin the exact tag
 FROM ${BASE}
 
-# Install NVIDIA jetpack components
-RUN --mount=from=build,target=/build \
-     dnf -y install bsdtar && \
-     dnf -y install /build/src/rpmbuild/RPMS/aarch64/*.rpm && \
-     dnf clean all
+###########################################################################
+## Install NVIDIA jetpack components
+#RUN --mount=from=build,target=/build \
+#     dnf -y install bsdtar && \
+#     dnf -y install /build/src/rpmbuild/RPMS/aarch64/*.rpm && \
+#     dnf clean all
+###########################################################################
 
 # Regenerate initrd (just in case)
 RUN set -x; kver=$(cd /usr/lib/modules && echo *); dracut -vf /usr/lib/modules/$kver/initramfs.img $kver
