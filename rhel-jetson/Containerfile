@@ -68,7 +68,7 @@ EOF
 ##########
 
 # For camera
-RUN groupadd video
+RUN usermod -aG video admin
 
 # Additional packages
 RUN dnf -y install \
