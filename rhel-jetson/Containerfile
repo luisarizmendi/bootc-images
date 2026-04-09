@@ -109,9 +109,10 @@ EOF
 # Additional packages
 RUN dnf -y install \
             tmux \
-            git \
-            NetworkManager-wifi
+            git 
 
+#            NetworkManager-wifi
+            
 ### Copy files
 COPY files/ /
 
