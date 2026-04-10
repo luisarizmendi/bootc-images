@@ -1,0 +1,53 @@
+# ~/.config/containers/systemd/object-detection-custom-inference-tensorrt-jetson.container
+# or /etc/containers/systemd/object-detection-custom-inference-tensorrt-jetson.container (system-wide)
+#
+# TensorRT inference for NVIDIA Jetson (JetPack 6.x, aarch64).
+# Uses the L4T TensorRT base — optimised for Tegra SoC (Orin NX / AGX / Nano Super).
+# For desktop/server GPU (x86_64 or generic arm64), use object-detection-custom-inference-tensorrt.container.
+#
+# Bundled model is converted to a .engine on first start (~5 min on Jetson).
+# The volume below persists the engine so subsequent starts are instant.
+#
+# Enable:
+#   systemctl --user daemon-reload
+#   systemctl --user start object-detection-custom-inference-tensorrt-jetson
+
+[Unit]
+Description=TensorRT Inference (Jetson) — SHM frames → ZeroMQ detections
+After=object-detection-custom-camera-capture.service
+Requires=object-detection-custom-camera-capture.service
+
+[Container]
+Image=quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest
+ContainerName=object-detection-custom-inference-tensorrt-jetson
+PullPolicy=missing
+
+Volume=/dev/shm:/dev/shm
+# Persist the built .engine across restarts (write access required):
+Volume=/opt/object-detection-custom/models:/opt/models
+
+AddDevice=nvidia.com/gpu=all
+Network=host
+SecurityLabelDisable=true
+
+Environment=SHM_FRAME_NAME=camera_frame
+Environment=ZMQ_PUB_PORT=5555
+Environment=ZMQ_TOPIC=detections
+Environment=INFERENCE_MODEL=model.onnx
+Environment=MODELS_DIR=/opt/models
+Environment=INFERENCE_WIDTH=640
+Environment=INFERENCE_HEIGHT=640
+Environment=CONFIDENCE_THRESH=0.4
+Environment=NMS_THRESH=0.45
+Environment=TARGET_FPS=30
+Environment=TRT_FP16=1
+Environment=LOG_LEVEL=INFO
+
+[Service]
+Restart=always
+RestartSec=5
+# Engine build can take several minutes on first run
+TimeoutStartSec=600
+
+[Install]
+WantedBy=default.target
