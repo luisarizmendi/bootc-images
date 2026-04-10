@@ -77,6 +77,7 @@ EOF
 # Additional packages
 RUN dnf -y install \
             tmux \
+            python3-pip \
             git && \
     dnf -y clean all
 #            NetworkManager-wifi
@@ -93,6 +94,49 @@ RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
     chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
     ln -s /etc/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service
 
+
+
+
+
+
+################################################################################
+######################    USER FOR ROOTLESS CONTAINERS  ########################
+################################################################################
+
+RUN useradd -m -d /var/home/detector detector && \
+    grep video /usr/lib/group | sudo tee -a /etc/group && \
+    sudo usermod -aG video detector
+
+RUN mkdir -p /var/home/detector/.config/containers
+
+# Point rootless podman to also look in root's store (read-only)
+RUN cat > /var/home/detector/.config/containers/storage.conf <<EOF
+[storage]
+  driver = "overlay"
+
+[storage.options]
+  additionalimagestores = [
+    "/var/lib/containers/storage"
+  ]
+EOF
+
+# Fix ownership (home is /var/home in bootc/ostree)
+RUN chown -R detector:detector /var/home/detector/.config
+
+
+################################################################################
+######################    EMBED MODEL    #######################################
+################################################################################
+
+RUN mkdir -p /usr/local/share/models/  && \
+    curl -L -o /usr/local/share/models/model.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x.pt
+
+RUN chmod +x /usr/local/bin/export-yolo-onnx.py && \
+    pip install ultralytics && \
+    python /usr/local/bin/export-yolo-onnx.py /usr/local/share/models/model.pt && \
+    chmod 755 -R /usr/local/share/models/
+
+# The .engine file will be created in the first run: [INFO] Building TRT engine from /opt/models/model.onnx (this may take several minutes)
 
 ################################################################################
 ######################    EMBED IMAGES   #######################################
@@ -153,9 +197,10 @@ RUN chmod 755 /usr/bin/embed_image.sh && \
 
 
 ############ Images to embed ############
-#RUN /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-camera-capture:latest && \
-#    /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest && \
-#    /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
-
+RUN <<PULL
+/usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
+/usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest
+/usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
+PULL
 
 
