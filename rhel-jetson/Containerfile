@@ -153,9 +153,9 @@ RUN chmod 755 /usr/bin/embed_image.sh && \
 
 
 ############ Images to embed ############
-RUN /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-camera-capture:latest && \
-    /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest && \
-    /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
+#RUN /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-camera-capture:latest && \
+#    /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest && \
+#    /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
 
 
 
