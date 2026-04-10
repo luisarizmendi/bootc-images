@@ -124,6 +124,15 @@ EOF
 RUN chown -R detector:detector /var/home/detector/.config
 
 
+RUN mkdir -p /var/home/detector/.config/containers/systemd && \
+    cp /tmp/quadlets/object-detection-custom-camera-capture.container /var/home/detector/.config/containers/systemd/ && \
+    cp /tmp//quadlets/object-detection-custom-stream-viewer.container  /var/home/detector/.config/containers/systemd/ && \
+    cp /tmp//quadlets/object-detection-custom-inference-tensorrt-jetson.container   /var/home/detector/.config/containers/systemd/ && \
+    systemctl --user daemon-reload && \
+    systemctl --user start object-detection-custom-camera-capture.service && \
+    systemctl --user start object-detection-custom-inference-tensorrt-jetson.service
+
+
 ################################################################################
 ######################    EMBED MODEL    #######################################
 ################################################################################
@@ -143,7 +152,7 @@ RUN chmod +x /usr/local/bin/export-yolo-onnx.py && \
 ################################################################################
 
 ############ Embed image script ############
-RUN cat > /usr/bin/embed_image.sh <<EOF
+RUN cat > /usr/bin/embed_image.sh <<'EOF'
 #!/bin/bash
 set -euxo pipefail
 image=$1
@@ -154,14 +163,13 @@ skopeo copy $additional_copy_args --preserve-digests docker://$image dir:/usr/li
 echo "$image,$sha" >> /usr/lib/containers-image-cache/mapping.txt
 EOF
 
-
 ############ Copy image script ############
-RUN cat > /usr/bin/copy_embedded_images.sh  <<EOF
+RUN cat > /usr/bin/copy_embedded_images.sh <<'EOF'
 #!/bin/bash
 set -euxo pipefail
 while IFS="," read -r image sha
 do
-	skopeo copy --preserve-digests dir:/usr/lib/containers-image-cache/$sha containers-storage:$image
+    skopeo copy --preserve-digests dir:/usr/lib/containers-image-cache/$sha containers-storage:$image
 done < /usr/lib/containers-image-cache/mapping.txt
 EOF
 
