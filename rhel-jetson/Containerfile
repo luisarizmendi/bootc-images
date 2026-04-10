@@ -127,10 +127,7 @@ RUN chown -R detector:detector /var/home/detector/.config
 RUN mkdir -p /var/home/detector/.config/containers/systemd && \
     cp /tmp/quadlets/object-detection-custom-camera-capture.container /var/home/detector/.config/containers/systemd/ && \
     cp /tmp//quadlets/object-detection-custom-stream-viewer.container  /var/home/detector/.config/containers/systemd/ && \
-    cp /tmp//quadlets/object-detection-custom-inference-tensorrt-jetson.container   /var/home/detector/.config/containers/systemd/ && \
-    systemctl --user daemon-reload && \
-    systemctl --user start object-detection-custom-camera-capture.service && \
-    systemctl --user start object-detection-custom-inference-tensorrt-jetson.service
+    cp /tmp//quadlets/object-detection-custom-inference-tensorrt-jetson.container   /var/home/detector/.config/containers/systemd/ 
 
 
 ################################################################################
