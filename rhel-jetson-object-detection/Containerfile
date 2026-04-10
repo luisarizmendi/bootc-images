@@ -79,68 +79,70 @@ RUN chmod +x /usr/local/bin/export-yolo-onnx.py && \
 
 # The .engine file will be created in the first run: [INFO] Building TRT engine from /opt/models/model.onnx (this may take several minutes)
 
-################################################################################
-######################    EMBED IMAGES   #######################################
-################################################################################
-
-############ Embed image script ############
-RUN cat > /usr/bin/embed_image.sh <<'EOF'
-#!/bin/bash
-set -euxo pipefail
-image=$1
-additional_copy_args=${2:-""}
-mkdir -p /usr/lib/containers-image-cache
-sha=$(echo "$image" | sha256sum | awk '{ print $1 }')
-skopeo copy $additional_copy_args --preserve-digests docker://$image dir:/usr/lib/containers-image-cache/$sha
-echo "$image,$sha" >> /usr/lib/containers-image-cache/mapping.txt
-EOF
-
-############ Copy image script ############
-RUN cat > /usr/bin/copy_embedded_images.sh <<'EOF'
-#!/bin/bash
-set -euxo pipefail
-while IFS="," read -r image sha
-do
-    skopeo copy --preserve-digests dir:/usr/lib/containers-image-cache/$sha containers-storage:$image
-done < /usr/lib/containers-image-cache/mapping.txt
-EOF
 
 
-############ First boot Copy image script ############
-RUN cat > /etc/systemd/system/copy-embedded-images.service  <<EOF
-[Unit]
-Description=Copy Embedded Images (run once until success)
-After=network.target
-ConditionPathExists=!/var/lib/copy_embedded_images.done
+# ################################################################################
+# ######################    EMBED IMAGES   #######################################
+# ################################################################################
 
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/copy_embedded_images.sh
-ExecStartPost=/usr/bin/touch /var/lib/copy_embedded_images.done
+# ############ Embed image script ############
+# RUN cat > /usr/bin/embed_image.sh <<'EOF'
+# #!/bin/bash
+# set -euxo pipefail
+# image=$1
+# additional_copy_args=${2:-""}
+# mkdir -p /usr/lib/containers-image-cache
+# sha=$(echo "$image" | sha256sum | awk '{ print $1 }')
+# skopeo copy $additional_copy_args --preserve-digests docker://$image dir:/usr/lib/containers-image-cache/$sha
+# echo "$image,$sha" >> /usr/lib/containers-image-cache/mapping.txt
+# EOF
 
-# Retry if it fails
-Restart=on-failure
-RestartSec=30
-
-# Important for long-running scripts
-TimeoutStartSec=infinity
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-
-############ Script permissions and systemd conf ############
-RUN chmod 755 /usr/bin/embed_image.sh && \
-    chmod 755 /usr/bin/copy_embedded_images.sh && \
-    systemctl enable copy-embedded-images.service
+# ############ Copy image script ############
+# RUN cat > /usr/bin/copy_embedded_images.sh <<'EOF'
+# #!/bin/bash
+# set -euxo pipefail
+# while IFS="," read -r image sha
+# do
+#     skopeo copy --preserve-digests dir:/usr/lib/containers-image-cache/$sha containers-storage:$image
+# done < /usr/lib/containers-image-cache/mapping.txt
+# EOF
 
 
-############ Images to embed ############
-RUN <<PULL
-/usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
-/usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest
-/usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
-PULL
+# ############ First boot Copy image script ############
+# RUN cat > /etc/systemd/system/copy-embedded-images.service  <<EOF
+# [Unit]
+# Description=Copy Embedded Images (run once until success)
+# After=network.target
+# ConditionPathExists=!/var/lib/copy_embedded_images.done
+
+# [Service]
+# Type=oneshot
+# ExecStart=/usr/bin/copy_embedded_images.sh
+# ExecStartPost=/usr/bin/touch /var/lib/copy_embedded_images.done
+
+# # Retry if it fails
+# Restart=on-failure
+# RestartSec=30
+
+# # Important for long-running scripts
+# TimeoutStartSec=infinity
+
+# [Install]
+# WantedBy=multi-user.target
+# EOF
+
+
+# ############ Script permissions and systemd conf ############
+# RUN chmod 755 /usr/bin/embed_image.sh && \
+#     chmod 755 /usr/bin/copy_embedded_images.sh && \
+#     systemctl enable copy-embedded-images.service
+
+
+# ############ Images to embed ############
+# RUN <<PULL
+# /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
+# /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest
+# /usr/bin/embed_image.sh  quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
+# PULL
 
 
