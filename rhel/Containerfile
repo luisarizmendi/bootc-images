@@ -16,7 +16,7 @@ RUN chmod +x /usr/local/bin/* && \
 # v2 (splitted here for demo)
 ################################################################################
 
-#RUN dnf install -y tmux && \
-#    dnf clean all
+RUN dnf install -y tmux && \
+    dnf clean all
 
 
