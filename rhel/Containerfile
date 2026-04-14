@@ -1,0 +1,22 @@
+FROM registry.redhat.io/rhel9/rhel-bootc:9.6
+
+################################################################################
+# Customization
+################################################################################
+
+RUN dnf install -y tcpdump && \
+    dnf clean all
+
+COPY files/ /
+
+RUN chmod +x /usr/local/bin/* && \
+    ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service 
+
+################################################################################
+# v2 (splitted here for demo)
+################################################################################
+
+#RUN dnf install -y tmux && \
+#    dnf clean all
+
+
