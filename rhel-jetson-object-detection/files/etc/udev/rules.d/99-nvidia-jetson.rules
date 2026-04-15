@@ -1,0 +1,21 @@
+# Tegra memory manager
+KERNEL=="nvmap",                        GROUP="gpu", MODE="0660"
+# Tegra GPU host devices
+KERNEL=="nvhost-as-gpu",                GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-ctrl-gpu",              GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-ctxsw-gpu",             GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-dbg-gpu",               GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-gpu",                   GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-nvsched-gpu",           GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-nvsched_ctrl_fifo-gpu", GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-power-gpu",             GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-prof-ctx-gpu",          GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-prof-dev-gpu",          GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-prof-gpu",              GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-sched-gpu",             GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-tsg-gpu",               GROUP="gpu", MODE="0660"
+# nvgpu character devices
+KERNEL=="nvgpu*",                       GROUP="gpu", MODE="0660"
+# Standard NVIDIA nodes
+KERNEL=="nvidia*",                      GROUP="gpu", MODE="0660"
+KERNEL=="nvidiactl",                    GROUP="gpu", MODE="0660"

@@ -1,0 +1,15 @@
+[Unit]
+Description=Copy Embedded Images into shared store (run once until success)
+After=network.target
+ConditionPathExists=!/var/lib/copy_embedded_images.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/copy_embedded_images.sh
+ExecStartPost=/usr/bin/touch /var/lib/copy_embedded_images.done
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target

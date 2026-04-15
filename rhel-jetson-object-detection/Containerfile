@@ -3,11 +3,11 @@ FROM ghcr.io/luisarizmendi/bootc-rhel-jetson:latest
 ##########
 
 # To enable podman-compose application support
- RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
-     dnf -y install podman-compose && \
-     dnf -y clean all && \
-     rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
-     systemctl enable podman.service
+RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
+    dnf -y install podman-compose && \
+    dnf -y clean all && \
+    rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
+    systemctl enable podman.service
 
 # Additional packages
 RUN dnf -y install \
@@ -27,67 +27,28 @@ COPY files/ /
 
 RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
     chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
-    ln -s /etc/systemd/system/mac-hostname.service /etc/systemd/system/multi-user.target.wants/mac-hostname.service
+    systemctl enable mac-hostname.service
 
 
 ################################################################################
 ######################    USER FOR ROOTLESS CONTAINERS  ########################
 ################################################################################
 
-RUN useradd -m -d /var/home/detector detector && \
-    grep video /usr/lib/group | sudo tee -a /etc/group && \
-    sudo usermod -aG video detector
-
-# Enable linger so systemd starts a user session at boot (needed for rootless Podman)
-RUN mkdir -p /var/lib/systemd/linger && \
-    touch /var/lib/systemd/linger/detector
-
-RUN mkdir -p /var/home/detector/.config/containers
-
-# Fix ownership (home is /var/home in bootc/ostree)
-RUN chown -R detector:detector /var/home/detector/.config
-
-RUN mkdir -p /var/home/detector/.config/containers/systemd && \
-    cp /tmp/quadlets/object-detection-custom-camera-capture.container /var/home/detector/.config/containers/systemd/ && \
-    cp /tmp/quadlets/object-detection-custom-stream-viewer.container  /var/home/detector/.config/containers/systemd/ && \
-    cp /tmp/quadlets/object-detection-custom-inference-tensorrt-jetson.container   /var/home/detector/.config/containers/systemd/
-
-
+# useradd writes to /etc (committed by ostree) — OK.
+# -M skips home dir creation since /var/home is not committed anyway.
+RUN useradd -M -d /var/home/detector detector && \
+    grep video /usr/lib/group | tee -a /etc/group && \
+    usermod -aG video detector
 
 # Create a dedicated gpu group (GID 980, pick any free GID)
 RUN groupadd -r -g 980 gpu
-
-# udev rules: all Tegra/NVIDIA device nodes → group gpu, mode 0660
-RUN cat <<'EOF' > /etc/udev/rules.d/99-nvidia-jetson.rules
-# Tegra memory manager
-KERNEL=="nvmap",                    GROUP="gpu", MODE="0660"
-# Tegra GPU host devices
-KERNEL=="nvhost-as-gpu",            GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-ctrl-gpu",          GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-ctxsw-gpu",         GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-dbg-gpu",           GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-gpu",               GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-nvsched-gpu",       GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-nvsched_ctrl_fifo-gpu", GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-power-gpu",         GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-prof-ctx-gpu",      GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-prof-dev-gpu",      GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-prof-gpu",          GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-sched-gpu",         GROUP="gpu", MODE="0660"
-KERNEL=="nvhost-tsg-gpu",           GROUP="gpu", MODE="0660"
-# nvgpu character devices
-KERNEL=="nvgpu*",                   GROUP="gpu", MODE="0660"
-# Standard NVIDIA nodes
-KERNEL=="nvidia*",                  GROUP="gpu", MODE="0660"
-KERNEL=="nvidiactl",                GROUP="gpu", MODE="0660"
-EOF
 
 
 ################################################################################
 ######################    EMBED MODEL    #######################################
 ################################################################################
 
-RUN mkdir -p /usr/local/share/models/  && \
+RUN mkdir -p /usr/local/share/models/ && \
     curl -L -o /usr/local/share/models/model.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x.pt
 
 RUN chmod +x /usr/local/bin/export-yolo-onnx.py && \
@@ -95,91 +56,19 @@ RUN chmod +x /usr/local/bin/export-yolo-onnx.py && \
     python /usr/local/bin/export-yolo-onnx.py /usr/local/share/models/model.pt && \
     chmod 755 -R /usr/local/share/models/
 
-# The .engine file will be created in the first run: [INFO] Building TRT engine from /opt/models/model.onnx (this may take several minutes)
+# The .engine file will be created on first run: [INFO] Building TRT engine from /opt/models/model.onnx (this may take several minutes)
 
 
 ################################################################################
 ######################    EMBED IMAGES   #######################################
 ################################################################################
 
-############ Prepare shared image store ############
-RUN mkdir -p /var/lib/shared/overlay-images \
-             /var/lib/shared/overlay-layers \
-             /var/lib/shared/vfs-images \
-             /var/lib/shared/vfs-layers && \
-    touch /var/lib/shared/libpod/container_api.sqlite || true
-
-############ Embed image script ############
-RUN cat > /usr/bin/embed_image.sh <<'EOF'
-#!/bin/bash
-set -euxo pipefail
-image=$1
-mkdir -p /usr/lib/containers-image-cache
-sha=$(echo "$image" | sha256sum | awk '{ print $1 }')
-skopeo copy --preserve-digests docker://$image dir:/usr/lib/containers-image-cache/$sha
-echo "$image,$sha" >> /usr/lib/containers-image-cache/mapping.txt
-EOF
-
-############ Copy image script (writes into shared store) ############
-RUN cat > /usr/bin/copy_embedded_images.sh <<'EOF'
-#!/bin/bash
-set -euxo pipefail
-while IFS="," read -r image sha
-do
-    skopeo copy \
-        --preserve-digests \
-        dir:/usr/lib/containers-image-cache/$sha \
-        containers-storage:[overlay@/var/lib/shared+/run/containers/storage]$image
-done < /usr/lib/containers-image-cache/mapping.txt
-EOF
-
-############ First boot copy image script ############
-RUN cat > /etc/systemd/system/copy-embedded-images.service <<EOF
-[Unit]
-Description=Copy Embedded Images into shared store (run once until success)
-After=network.target
-ConditionPathExists=!/var/lib/copy_embedded_images.done
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/copy_embedded_images.sh
-ExecStartPost=/usr/bin/touch /var/lib/copy_embedded_images.done
-Restart=on-failure
-RestartSec=30
-TimeoutStartSec=infinity
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-############ Script permissions and systemd conf ############
-RUN chmod 755 /usr/bin/embed_image.sh && \
-    chmod 755 /usr/bin/copy_embedded_images.sh && \
+############ Script permissions and systemd enable ############
+RUN chmod 755 /usr/local/bin/embed_image.sh && \
+    chmod 755 /usr/local/bin/copy_embedded_images.sh && \
     systemctl enable copy-embedded-images.service
 
-############ Configure detector to use shared image store ############
-## tmpfiles.d is used because /var is not affected in bootc builds
-
-# Store the actual config under /usr (committed by ostree)
-RUN mkdir -p /usr/share/detector/containers && \
-    cat > /usr/share/detector/containers/storage.conf <<'EOF'
-[storage]
-driver = "overlay"
-
-[storage.options]
-additionalimagestores = ["/var/lib/shared"]
-
-[storage.options.overlay]
-ignore_chown_errors = "true"
-EOF
-
-# tmpfiles.d copies it into /var on first boot if it doesn't exist yet
-RUN cat > /etc/tmpfiles.d/detector-containers.conf <<'EOF'
-d /var/home/detector/.config/containers 0755 detector detector -
-C /var/home/detector/.config/containers/storage.conf 0644 detector detector - /usr/share/detector/containers/storage.conf
-EOF
-
 ############ Images to embed ############
-RUN /usr/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
-RUN /usr/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest
-RUN /usr/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
+RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
+RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest
+RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
