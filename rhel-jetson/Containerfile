@@ -29,19 +29,19 @@ RUN curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-co
     sudo dnf clean all
 
 # Create and enable a systemd service to generate the NVIDIA CDI YAML file
-RUN cat <<EOF > /etc/systemd/system/nvidia-cdi.service
+RUN cat <<'EOF' > /etc/systemd/system/nvidia-cdi.service
 [Unit]
 Description=Generate the nvidia cdi yaml file
-Requires=multi-user.target
-Requires=systemd-modules-load.service
-After=multi-user.target
-After=systemd-modules-load.service
+After=multi-user.target systemd-modules-load.service
 
 [Service]
 Type=oneshot
 ExecStartPre=bash -c "echo 1 > /dev/nvgpu/igpu0/power"
 ExecStart=nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+ExecStartPost=bash -c "grep -q nvhost /etc/cdi/nvidia.yaml || (echo 'CDI spec incomplete, retrying...' && nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml)"
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
