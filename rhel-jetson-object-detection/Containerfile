@@ -38,6 +38,10 @@ RUN useradd -m -d /var/home/detector detector && \
     grep video /usr/lib/group | sudo tee -a /etc/group && \
     sudo usermod -aG video detector
 
+# Enable linger so systemd starts a user session at boot (needed for rootless Podman)
+RUN mkdir -p /var/lib/systemd/linger && \
+    touch /var/lib/systemd/linger/detector
+
 RUN mkdir -p /var/home/detector/.config/containers
 
 # Fix ownership (home is /var/home in bootc/ostree)
@@ -47,6 +51,36 @@ RUN mkdir -p /var/home/detector/.config/containers/systemd && \
     cp /tmp/quadlets/object-detection-custom-camera-capture.container /var/home/detector/.config/containers/systemd/ && \
     cp /tmp/quadlets/object-detection-custom-stream-viewer.container  /var/home/detector/.config/containers/systemd/ && \
     cp /tmp/quadlets/object-detection-custom-inference-tensorrt-jetson.container   /var/home/detector/.config/containers/systemd/
+
+
+
+# Create a dedicated gpu group (GID 980, pick any free GID)
+RUN groupadd -r -g 980 gpu
+
+# udev rules: all Tegra/NVIDIA device nodes → group gpu, mode 0660
+RUN cat <<'EOF' > /etc/udev/rules.d/99-nvidia-jetson.rules
+# Tegra memory manager
+KERNEL=="nvmap",                    GROUP="gpu", MODE="0660"
+# Tegra GPU host devices
+KERNEL=="nvhost-as-gpu",            GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-ctrl-gpu",          GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-ctxsw-gpu",         GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-dbg-gpu",           GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-gpu",               GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-nvsched-gpu",       GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-nvsched_ctrl_fifo-gpu", GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-power-gpu",         GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-prof-ctx-gpu",      GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-prof-dev-gpu",      GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-prof-gpu",          GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-sched-gpu",         GROUP="gpu", MODE="0660"
+KERNEL=="nvhost-tsg-gpu",           GROUP="gpu", MODE="0660"
+# nvgpu character devices
+KERNEL=="nvgpu*",                   GROUP="gpu", MODE="0660"
+# Standard NVIDIA nodes
+KERNEL=="nvidia*",                  GROUP="gpu", MODE="0660"
+KERNEL=="nvidiactl",                GROUP="gpu", MODE="0660"
+EOF
 
 
 ################################################################################
@@ -124,15 +158,26 @@ RUN chmod 755 /usr/bin/embed_image.sh && \
     systemctl enable copy-embedded-images.service
 
 ############ Configure detector to use shared image store ############
-RUN cat > /var/home/detector/.config/containers/storage.conf <<'EOF'
+## tmpfiles.d is used because /var is not affected in bootc builds
+
+# Store the actual config under /usr (committed by ostree)
+RUN mkdir -p /usr/share/detector/containers && \
+    cat > /usr/share/detector/containers/storage.conf <<'EOF'
 [storage]
 driver = "overlay"
 
 [storage.options]
 additionalimagestores = ["/var/lib/shared"]
+
+[storage.options.overlay]
+ignore_chown_errors = "true"
 EOF
 
-RUN chown -R detector:detector /var/home/detector/.config
+# tmpfiles.d copies it into /var on first boot if it doesn't exist yet
+RUN cat > /etc/tmpfiles.d/detector-containers.conf <<'EOF'
+d /var/home/detector/.config/containers 0755 detector detector -
+C /var/home/detector/.config/containers/storage.conf 0644 detector detector - /usr/share/detector/containers/storage.conf
+EOF
 
 ############ Images to embed ############
 RUN /usr/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
