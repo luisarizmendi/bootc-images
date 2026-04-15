@@ -24,7 +24,7 @@ PullPolicy=missing
 
 Volume=/dev/shm:/dev/shm
 # Persist the built .engine across restarts (write access required):
-Volume=/opt/object-detection-custom/models:/opt/models
+Volume=/usr/local/share/models:/opt/models
 
 AddDevice=nvidia.com/gpu=all
 Network=host

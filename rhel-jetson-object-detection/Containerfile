@@ -47,6 +47,7 @@ RUN groupadd -r -g 980 gpu
 ######################    EMBED MODEL    #######################################
 ################################################################################
 
+## Not included under /files since size is greater than 200Mb and we store it in GitHub
 RUN mkdir -p /usr/local/share/models/ && \
     curl -L -o /usr/local/share/models/model.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x.pt
 

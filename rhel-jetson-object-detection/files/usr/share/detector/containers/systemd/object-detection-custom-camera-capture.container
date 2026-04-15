@@ -21,7 +21,7 @@ GroupAdd=video
 
 Volume=/dev/shm:/dev/shm
 # Uncomment to enable video file fallback:
-# Volume=/path/to/videos:/videos:ro
+Volume=/usr/local/share/videos:/videos:ro
 
 # Pass all video devices so auto-detection works.
 # Restrict to a specific device if preferred.
@@ -33,7 +33,7 @@ SecurityLabelDisable=true
 
 # Environment
 Environment=CAM_TARGET_FPS=30
-Environment=DEVICE_PROBE_TIMEOUT=5
+Environment=DEVICE_PROBE_TIMEOUT=15
 Environment=VID_DIR=/videos
 Environment=SHM_FRAME_NAME=camera_frame
 Environment=VIEWER_JPEG_QUALITY=80
