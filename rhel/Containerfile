@@ -12,5 +12,5 @@ RUN chmod +x /usr/local/bin/* && \
 
 
 ##   v2
-#RUN dnf install -y tmux && \
-#    dnf clean all 
+RUN dnf install -y tmux && \
+    dnf clean all 
