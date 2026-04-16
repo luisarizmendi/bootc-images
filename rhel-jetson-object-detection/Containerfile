@@ -81,6 +81,6 @@ RUN chmod 755 /usr/local/bin/embed_image.sh && \
     systemctl enable copy-embedded-images.service
 
 ############ Images to embed ############
-RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
-RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest
-RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
+#RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
+#RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest
+#RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest

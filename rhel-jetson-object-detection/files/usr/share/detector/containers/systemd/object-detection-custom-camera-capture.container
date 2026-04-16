@@ -15,9 +15,9 @@ After=network.target
 [Container]
 Image=quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
 ContainerName=object-detection-custom-camera-capture
-PullPolicy=missing
 
-GroupAdd=video
+UserNS=keep-id:uid=1000,gid=1000
+PodmanArgs=--group-add=keep-groups
 
 Volume=/dev/shm:/dev/shm
 # Uncomment to enable video file fallback:

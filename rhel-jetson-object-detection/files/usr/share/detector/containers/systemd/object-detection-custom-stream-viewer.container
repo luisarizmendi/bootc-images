@@ -8,7 +8,6 @@ Requires=object-detection-custom-camera-capture.service
 [Container]
 Image=quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
 ContainerName=object-detection-custom-stream-viewer
-PullPolicy=missing
 
 Volume=/dev/shm:/dev/shm
 Network=host
