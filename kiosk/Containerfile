@@ -46,6 +46,6 @@ RUN systemctl set-default graphical.target
 #////////////////////////////////////////
 #DEMO V2 update (tmux )
 #////////////////////////////////////////
-#RUN dnf install -y tmux && \
-#    dnf clean all
+RUN dnf install -y tmux && \
+    dnf clean all
 #////////////////////////////////////////
