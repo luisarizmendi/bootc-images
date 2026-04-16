@@ -29,6 +29,7 @@ RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
     chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
     systemctl enable mac-hostname.service
 
+
 ################################################################################
 ######################    USER FOR ROOTLESS CONTAINERS  ########################
 ################################################################################
@@ -40,8 +41,16 @@ RUN useradd -M -d /var/home/detector detector && \
     usermod -aG video detector
 
 # Create a dedicated gpu group (GID 980, pick any free GID)
-RUN groupadd -r -g 980 gpu
+RUN groupadd -r -g 980 gpu && \
+    usermod -aG gpu detector
 
+# Required for user sessions
+RUN systemctl enable systemd-logind.service
+
+# Required for /run/user/<uid>
+RUN systemctl enable user-runtime-dir@detector.service
+
+RUN systemctl enable tegra-dev-perms.service
 
 ################################################################################
 ######################    EMBED MODEL    #######################################
@@ -63,6 +72,9 @@ RUN chmod +x /usr/local/bin/export-yolo-onnx.py && \
 ######################    EMBED IMAGES   #######################################
 ################################################################################
 
+RUN groupadd -r -g 981 cstore && \
+    usermod -aG cstore detector
+    
 ############ Script permissions and systemd enable ############
 RUN chmod 755 /usr/local/bin/embed_image.sh && \
     chmod 755 /usr/local/bin/copy_embedded_images.sh && \

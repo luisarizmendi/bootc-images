@@ -1,0 +1,13 @@
+[Unit]
+Description=Fix Tegra GPU device group ownership
+DefaultDependencies=no
+After=local-fs.target
+Before=nvidia-cdi.service podman.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c 'chown root:gpu /dev/nvhost-* /dev/nvmap && chmod 660 /dev/nvhost-* /dev/nvmap'
+
+[Install]
+WantedBy=multi-user.target
