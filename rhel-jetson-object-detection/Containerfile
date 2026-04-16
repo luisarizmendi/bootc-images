@@ -72,8 +72,7 @@ RUN chmod +x /usr/local/bin/export-yolo-onnx.py && \
 ######################    EMBED IMAGES   #######################################
 ################################################################################
 
-RUN groupadd -r -g 981 cstore && \
-    usermod -aG cstore detector
+RUN usermod -aG cstore detector
     
 ############ Script permissions and systemd enable ############
 RUN chmod 755 /usr/local/bin/embed_image.sh && \
