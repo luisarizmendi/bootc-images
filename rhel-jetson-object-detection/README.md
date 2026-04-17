@@ -27,3 +27,11 @@ podman cp temp-container:/ ./artifacts/
 # The installable files will be in ./artifacts/
 ls -la artifacts/bootiso/
 ```
+
+
+---
+
+## Important Notes
+
+- Application could need some minutes to start on first boot since the embedded images need to be enabled in the user
+- If Inference is not working, first try to remove the "model.engine" file under "/home/detector/models/" and start again the inference container, this will generate a new file for your hardware (it could take time, check the container logs).
