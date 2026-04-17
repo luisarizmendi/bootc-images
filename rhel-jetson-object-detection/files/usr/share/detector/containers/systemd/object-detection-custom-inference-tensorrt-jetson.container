@@ -20,10 +20,11 @@ Requires=object-detection-custom-camera-capture.service
 [Container]
 Image=quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest
 ContainerName=object-detection-custom-inference-tensorrt-jetson
+PodmanArgs=--group-add=keep-groups
 
 Volume=/dev/shm:/dev/shm
 # Persist the built .engine across restarts (write access required):
-Volume=/usr/local/share/models:/opt/models
+Volume=/var/home/detector/models:/opt/models
 
 AddDevice=nvidia.com/gpu=all
 Network=host

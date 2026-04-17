@@ -58,7 +58,7 @@ RUN systemctl enable tegra-dev-perms.service
 
 ## Not included under /files since size is greater than 200Mb and we store it in GitHub
 RUN mkdir -p /usr/local/share/models/ && \
-    curl -L -o /usr/local/share/models/model.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x.pt
+    curl -L -o /usr/local/share/models/model.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt
 
 RUN chmod +x /usr/local/bin/export-yolo-onnx.py && \
     pip install ultralytics && \
@@ -81,6 +81,6 @@ RUN chmod 755 /usr/local/bin/embed_image.sh && \
     systemctl enable copy-embedded-images.service
 
 ############ Images to embed ############
-#RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
-#RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest
-#RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
+RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-camera-capture:latest --user detector
+RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest --user detector
+RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest --user detector

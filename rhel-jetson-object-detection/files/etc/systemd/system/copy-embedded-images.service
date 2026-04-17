@@ -1,7 +1,7 @@
 [Unit]
 Description=Copy Embedded Images into shared store (run once until success)
-After=systemd-tmpfiles-setup.service local-fs.target
-Requires=systemd-tmpfiles-setup.service
+After=systemd-tmpfiles-setup.service local-fs.target systemd-logind.service user-runtime-dir@detector.service
+Requires=systemd-tmpfiles-setup.service user-runtime-dir@detector.service
 ConditionPathExists=!/var/lib/copy_embedded_images.done
 
 [Service]

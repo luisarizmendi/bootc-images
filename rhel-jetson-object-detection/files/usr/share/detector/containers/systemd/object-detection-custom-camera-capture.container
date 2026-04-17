@@ -21,7 +21,7 @@ PodmanArgs=--group-add=keep-groups
 
 Volume=/dev/shm:/dev/shm
 # Uncomment to enable video file fallback:
-Volume=/usr/local/share/videos:/videos:ro
+Volume=/var/home/detector/videos:/videos:ro
 
 # Pass all video devices so auto-detection works.
 # Restrict to a specific device if preferred.
