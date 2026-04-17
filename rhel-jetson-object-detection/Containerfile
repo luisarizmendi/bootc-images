@@ -60,7 +60,6 @@ RUN systemctl enable tegra-dev-perms.service
 ## From "COPY files/ /". Exported yolo26m.pt as "model.onnx" 
 # A ".engine" file generated in a Jetson Orin Nano is also included, If inference does not work try to remove the .engine file to force your hardware build it from the .onnx file
 
-
 ################################################################################
 ######################    EMBED IMAGES   #######################################
 ################################################################################
