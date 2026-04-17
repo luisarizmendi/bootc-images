@@ -1,7 +1,6 @@
 FROM ghcr.io/luisarizmendi/bootc-rhel-jetson:latest
 
 ##########
-
 # To enable podman-compose application support
 RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
     dnf -y install podman-compose && \
@@ -15,60 +14,45 @@ RUN dnf -y install \
             python3-pip \
             git && \
     dnf -y clean all
-#            NetworkManager-wifi
 
 ### Copy files
 COPY files/ /
-
-## Include WIFI config
-#RUN --mount=type=secret,id=WIFI_SSID --mount=type=secret,id=WIFI_PASSWORD \
-#    sed -i "s/YOUR_WIFI_NAME/$(cat /run/secrets/WIFI_SSID | tr -d '\n')/g" /etc/NetworkManager/system-connections/wifi.nmconnection  && \
-#    sed -i "s/YOUR_WIFI_PASSWORD/$(cat /run/secrets/WIFI_PASSWORD | tr -d '\n')/g" /etc/NetworkManager/system-connections/wifi.nmconnection
 
 RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
     chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
     systemctl enable mac-hostname.service
 
-
 ################################################################################
 ######################    USER FOR ROOTLESS CONTAINERS  ########################
 ################################################################################
 
-# useradd writes to /etc (committed by ostree) — OK.
-# -M skips home dir creation since /var/home is not committed anyway.
 RUN useradd -M -d /var/home/detector detector && \
     grep video /usr/lib/group | tee -a /etc/group && \
     usermod -aG video detector
 
-# Create a dedicated gpu group (GID 980, pick any free GID)
 RUN groupadd -r -g 980 gpu && \
     usermod -aG gpu detector
+
+RUN groupadd -r cstore && \
+    usermod -aG cstore detector
 
 # Required for user sessions
 RUN systemctl enable systemd-logind.service
 
-# Required for /run/user/<uid>
-RUN systemctl enable user-runtime-dir@detector.service
+# Required for /run/user/1000 — use UID, not username
+RUN systemctl enable user-runtime-dir@1000.service
 
 RUN systemctl enable tegra-dev-perms.service
 
-RUN loginctl enable-linger detector 
 
 ################################################################################
 ######################    EMBED MODEL    #######################################
 ################################################################################
 
-## From "COPY files/ /". Exported yolo26m.pt as "model.onnx" 
-# A ".engine" file generated in a Jetson Orin Nano is also included, If inference does not work try to remove the .engine file to force your hardware build it from the .onnx file
-
-
 ################################################################################
 ######################    EMBED IMAGES   #######################################
 ################################################################################
 
-RUN groupadd -r cstore && \
-    usermod -aG cstore detector
-    
 ############ Script permissions and systemd enable ############
 RUN chmod 755 /usr/local/bin/embed_image.sh && \
     chmod 755 /usr/local/bin/copy_embedded_images.sh && \
