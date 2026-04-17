@@ -52,6 +52,7 @@ RUN systemctl enable user-runtime-dir@detector.service
 
 RUN systemctl enable tegra-dev-perms.service
 
+RUN loginctl enable-linger detector 
 
 ################################################################################
 ######################    EMBED MODEL    #######################################
