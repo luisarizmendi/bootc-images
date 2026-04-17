@@ -56,16 +56,8 @@ RUN systemctl enable tegra-dev-perms.service
 ######################    EMBED MODEL    #######################################
 ################################################################################
 
-## Not included under /files since size is greater than 200Mb and we store it in GitHub
-RUN mkdir -p /usr/local/share/models/ && \
-    curl -L -o /usr/local/share/models/model.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt
-
-RUN chmod +x /usr/local/bin/export-yolo-onnx.py && \
-    pip install ultralytics && \
-    python /usr/local/bin/export-yolo-onnx.py /usr/local/share/models/model.pt && \
-    chmod 755 -R /usr/local/share/models/
-
-# The .engine file will be created on first run: [INFO] Building TRT engine from /opt/models/model.onnx (this may take several minutes)
+## From "COPY files/ /". Exported yolo26m.pt as "model.onnx" 
+# A ".engine" file generated in a Jetson Orin Nano is also included, If inference does not work try to remove the .engine file to force your hardware build it from the .onnx file
 
 
 ################################################################################
