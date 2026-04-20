@@ -13,8 +13,8 @@ RUN chmod +x /usr/local/bin/* && \
     systemctl enable first-boot.service
 
 ##   v2 remove tcpdump ########################################
-RUN dnf install -y tcpdump && \
-    dnf clean all
+#RUN dnf install -y tcpdump && \
+#    dnf clean all
 ########################################
 
 ##   v3 add tree ########################################
