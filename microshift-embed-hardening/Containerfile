@@ -20,7 +20,6 @@ RUN dnf config-manager \
 RUN dnf install -y xz yq podman-plugins inotify-tools firewalld microshift dialog \
                    cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
     systemctl enable microshift && \
-    systemctl enable microshift-observability && \
     systemctl enable cockpit.socket && \
     dnf clean all
 
