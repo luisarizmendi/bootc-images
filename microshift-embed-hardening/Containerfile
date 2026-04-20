@@ -5,6 +5,10 @@ FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
 
 ARG USHIFT_VER
 
+################################################################################
+######################    Microshift and  main configs  #######################################
+################################################################################
+
 RUN dnf config-manager \
         --set-enabled rhocp-${USHIFT_VER}-for-rhel-9-$(uname -m)-rpms \
         --set-enabled fast-datapath-for-rhel-9-$(uname -m)-rpms \
@@ -13,7 +17,7 @@ RUN dnf config-manager \
  RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
      dnf -y clean all 
 
-RUN dnf install -y xz yq podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm microshift-gitops microshift-observability dialog \
+RUN dnf install -y xz yq podman-plugins inotify-tools firewalld microshift dialog \
                    cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
     systemctl enable microshift && \
     systemctl enable microshift-observability && \
@@ -23,9 +27,9 @@ RUN dnf install -y xz yq podman-plugins inotify-tools firewalld microshift micro
 COPY files/ /
 
 RUN chmod +x /usr/local/bin/* && \
-    ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
-    ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
-
+    systemctl enable first-boot.service && \
+    systemctl enable hook-files.service
+    
 RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
     firewall-offline-cmd --zone=trusted --add-source=169.254.169.1 && \
     firewall-offline-cmd --zone=public --add-port=22/tcp && \
