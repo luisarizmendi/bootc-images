@@ -68,6 +68,11 @@ while IFS="," read -r img sha ; do
 done < "${IMAGE_LIST_FILE}"
 EOF
 
+# Add additional images
+RUN cat >> "${IMAGE_LIST_FILE}" <<EOF
+quay.io/tasato/hello-js
+EOF
+
 RUN chmod 755 /usr/bin/microshift-copy-images && \
     mkdir -p /usr/lib/systemd/system/microshift.service.d
 
