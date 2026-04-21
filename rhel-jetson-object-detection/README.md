@@ -33,5 +33,9 @@ ls -la artifacts/bootiso/
 
 ## Important Notes
 
-- Application could need some minutes to start on first boot since the embedded images need to be enabled in the user
-- If Inference is not working, first try to remove the "model.engine" file under "/home/detector/models/" and start again the inference container, this will generate a new file for your hardware (it could take time, check the container logs).
+- The application may take a few minutes to start on the first boot, as the embedded images need to be initialized for the user. On an NVIDIA Jetson Orin Nano with 8 GB of memory (zero-touch provisioning, i.e., not pressing `Enter` in the GRUB menu):
+  - **System installation**: ~11 minutes from power-on (up to the second time the fan spins up).
+  - **Image availability**: ~1.5 additional minutes for the image to appear on port 8080.
+  - **Inference service readiness**: ~1 more minute for the inference service to become available.
+
+- If inference is not working, first try removing the `model.engine` file under `/home/detector/models/` and restart the inference container. This will generate a new file for your hardware (it may take some time—check the container logs).
