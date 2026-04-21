@@ -18,10 +18,6 @@ RUN dnf -y install \
 ### Copy files
 COPY files/ /
 
-RUN cat > /etc/profile.d/xdg-runtime-dir.sh << 'EOF'
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
-EOF
-
 RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
     chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
     systemctl enable mac-hostname.service
@@ -31,28 +27,27 @@ RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
 ######################    USER FOR ROOTLESS CONTAINERS  ########################
 ################################################################################
 
+# Create user and groups for the rootless containers
 RUN useradd -M -d /var/home/detector detector && \
     grep video /usr/lib/group | tee -a /etc/group && \
     usermod -aG video detector
 
+# Create the GPU group to access the GPU
 RUN groupadd -r -g 980 gpu && \
-    usermod -aG gpu detector
+    usermod -aG gpu detector && \
+    systemctl enable tegra-dev-perms.service
 
-RUN groupadd -r cstore && \
-    usermod -aG cstore detector
 
-# Required for user sessions
-RUN systemctl enable systemd-logind.service
+# Export the XDG_RUNTIME_DIR by default (so systemctl --user cli works)
+RUN cat > /etc/profile.d/xdg-runtime-dir.sh << 'EOF'
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+EOF
+
 
 # Required for /run/user/1000 — use UID, not username
-RUN systemctl enable user-runtime-dir@1000.service
+RUN systemctl enable user-runtime-dir@1000.service && \
+    systemctl enable user@1000.service
 
-RUN systemctl enable tegra-dev-perms.service
-
-
-################################################################################
-######################    EMBED MODEL    #######################################
-################################################################################
 
 ################################################################################
 ######################    EMBED IMAGES   #######################################
