@@ -44,12 +44,16 @@ RUN firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 && \
 # Extracts the list of MicroShift container image dependencies
 ENV IMAGE_STORAGE_DIR=/usr/lib/containers/storage
 ENV IMAGE_LIST_FILE=${IMAGE_STORAGE_DIR}/image-list.txt
+#ENV IMAGE_EXTRA="quay.io/tasato/hello-js:latest quay.io/another/image:tag"
+ENV IMAGE_EXTRA="quay.io/tasato/hello-js:latest"
+
 
 RUN dnf install -y microshift-release-info
 RUN --mount=type=secret,id=PULL_SECRET,dst=/run/secrets/pull-secret.json \
     images="$(jq -r ".images[]" /usr/share/microshift/release/release-"$(uname -m)".json)" ; \
+    extra_images="${IMAGE_EXTRA}" ; \
     mkdir -p "${IMAGE_STORAGE_DIR}" ; \
-    for img in ${images} ; do \
+    for img in ${images} ${extra_images} ; do \
         sha="$(echo "${img}" | sha256sum | awk '{print $1}')" ; \
         skopeo copy --all --preserve-digests \
             --authfile /run/secrets/pull-secret.json \
@@ -66,11 +70,6 @@ while IFS="," read -r img sha ; do
         "dir:${IMAGE_STORAGE_DIR}/\${sha}" \
         "containers-storage:\${img}"
 done < "${IMAGE_LIST_FILE}"
-EOF
-
-# Add additional images
-RUN cat >> "${IMAGE_LIST_FILE}" <<EOF
-quay.io/tasato/hello-js
 EOF
 
 RUN chmod 755 /usr/bin/microshift-copy-images && \

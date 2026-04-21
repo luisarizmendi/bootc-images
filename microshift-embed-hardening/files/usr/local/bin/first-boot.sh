@@ -13,14 +13,8 @@ set +e
 /usr/local/bin/create-microshift-dynamic-conf.sh
 set -e
 
-###############################################################
-## GET FILES
-echo "Getting files..."
-until /usr/local/bin/get-files.sh; do
-  echo "Script /usr/local/bin/get-files.sh failed, retrying..."
-  sleep 5
-done
-
+mkdir -p /root/.kube
+while [ ! -f /var/lib/microshift/resources/kubeadmin/kubeconfig ]; do sleep 2; done && cp /var/lib/microshift/resources/kubeadmin/kubeconfig /root/.kube/config
 
 ###############################################################
 ## COCKPIT
@@ -32,3 +26,10 @@ if [ -f /tmp/my-cockpit.te ]; then
     rm -f /tmp/my-cockpit.{te,mod,pp}
 fi
 
+###############################################################
+## GET FILES
+echo "Getting files..."
+until /usr/local/bin/get-files.sh; do
+  echo "Script /usr/local/bin/get-files.sh failed, retrying..."
+  sleep 5
+done
