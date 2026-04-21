@@ -16,7 +16,7 @@ After=network.target
 Image=quay.io/luisarizmendi/object-detection-custom-camera-capture:latest
 ContainerName=object-detection-custom-camera-capture
 
-UserNS=keep-id:uid=1000,gid=1000
+UserNS=keep-id:uid=1000,gid=39
 PodmanArgs=--group-add=keep-groups
 
 Volume=/dev/shm:/dev/shm

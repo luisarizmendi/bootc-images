@@ -18,9 +18,14 @@ RUN dnf -y install \
 ### Copy files
 COPY files/ /
 
+RUN cat > /etc/profile.d/xdg-runtime-dir.sh << 'EOF'
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+EOF
+
 RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
     chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
     systemctl enable mac-hostname.service
+
 
 ################################################################################
 ######################    USER FOR ROOTLESS CONTAINERS  ########################
