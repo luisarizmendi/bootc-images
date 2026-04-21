@@ -31,7 +31,7 @@ spec:
     spec:
       containers:
       - image: CONTAINER_IMAGE
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         name: hello-js
         resources: {}
         terminationMessagePath: /dev/termination-log

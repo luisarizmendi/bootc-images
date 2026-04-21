@@ -33,3 +33,9 @@ until /usr/local/bin/get-files.sh; do
   echo "Script /usr/local/bin/get-files.sh failed, retrying..."
   sleep 5
 done
+
+
+###############################################################
+## Generate oscap report
+
+oscap xccdf eval --tailoring-file /usr/share/scap-cis-tailoring.xml --profile xccdf_org.ssgproject.content_profile_cis_tailored --report /root/oscap-report.html /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml

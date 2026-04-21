@@ -5,4 +5,4 @@ resources:
   - testapp.yaml
 images:
   - name: CONTAINER_IMAGE
-    newName: quay.io/tasato/hello-js
+    newName: quay.io/tasato/hello-js:latest
