@@ -1,6 +1,6 @@
-# rhel-jetson-object-detection bootc ima
+# rhel-jetson-object-detection bootc image
 
-This image embeds the following application:
+This image embeds the following application embedded that us running as rootless containers using quadlets:
 
 https://github.com/luisarizmendi/object-detection-custom
 
