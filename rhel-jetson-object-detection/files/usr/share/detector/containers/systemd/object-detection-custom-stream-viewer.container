@@ -2,8 +2,7 @@
 
 [Unit]
 Description=Stream Viewer — WebSocket server for browser UI
-After=object-detection-custom-camera-capture.service
-Requires=object-detection-custom-camera-capture.service
+After=network.target
 
 [Container]
 Image=quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest
