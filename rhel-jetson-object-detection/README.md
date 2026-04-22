@@ -31,11 +31,19 @@ ls -la artifacts/bootiso/
 
 ---
 
-## Important Notes
+## Startup and Initialization Times
 
-- The application may take a few minutes to start on the first boot, as the embedded images need to be initialized for the user. On an NVIDIA Jetson Orin Nano with 8 GB of memory using a USB 2.0 stick (zero-touch provisioning, i.e., not pressing `Enter` in the GRUB menu):
+The application may take a few minutes to start on the first boot, as the embedded images need to be initialized for the user. On an NVIDIA Jetson Orin Nano with 8 GB of memory (zero-touch provisioning, i.e., not pressing `Enter` in the GRUB menu):
   - **System installation**: ~11 minutes from power-on (up to the second time the fan spins up).
   - **Image availability**: ~1.5 additional minutes for the image to appear on port 8080.
   - **Inference service readiness**: ~1 more minute for the inference service to become available.
 
-- If inference is not working, first try removing the `model.engine` file under `/home/detector/models/` and restart the inference container. This will generate a new file for your hardware (it may take some time—check the container logs).
+After installation and the first boot:
+  - **Device boot time**: ~15 seconds.
+  - **Application startup time**: ~30 seconds.
+
+---
+
+## Important Note
+
+If inference is not working, first try removing the `model.engine` file under `/home/detector/models/` and restart the inference container. This will generate a new file for your hardware (it may take some time—check the container logs).
