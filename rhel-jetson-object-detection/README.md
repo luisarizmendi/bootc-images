@@ -40,7 +40,10 @@ The application may take a few minutes to start on the first boot, as the embedd
 
 After installation and the first boot:
   - **Device boot time**: ~15 seconds.
-  - **Application startup time**: ~30 seconds.
+  - **Application startup time and Inference service readiness**: ~30 seconds after boot.
+
+
+> NOTE: Depending on your USB Camera, sometimes the camera initalization could fail. Application will show the embedded video until the camera is ready.
 
 ---
 
