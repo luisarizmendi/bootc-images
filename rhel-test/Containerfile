@@ -4,8 +4,7 @@
 FROM registry.redhat.io/rhel10/rhel-bootc:10.1
 ################################################
 
-RUN dnf install -y greenboot greenboot-default-health-checks && \
-    samba-common-tools realmd oddjob oddjob-mkhomedir sssd adcli krb5-workstation && \
+RUN dnf install -y greenboot greenboot-default-health-checks samba-common-tools realmd oddjob oddjob-mkhomedir sssd adcli krb5-workstation && \
     dnf clean all
 
 COPY files/ /
