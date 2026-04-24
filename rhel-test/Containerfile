@@ -1,23 +1,36 @@
-#FROM registry.redhat.io/rhel9/rhel-bootc:9.6
+FROM registry.redhat.io/rhel9/rhel-bootc:9.6
 
-## v3 move to rhel 10 ##########################################
-FROM registry.redhat.io/rhel10/rhel-bootc:10.1
-################################################
-
-RUN dnf install -y greenboot greenboot-default-health-checks samba-common-tools realmd oddjob oddjob-mkhomedir sssd adcli krb5-workstation && \
-    dnf clean all
-
-COPY files/ /
-
-RUN chmod +x /usr/local/bin/* && \
-    systemctl enable first-boot.service
-
-##   v2 remove tcpdump ########################################
-#RUN dnf install -y tcpdump && \
-#    dnf clean all
-########################################
-
-##   v3 add tree ########################################
-RUN dnf install -y tree && \
-    dnf clean all 
-################################################
+RUN dnf install -y \
+    cockpit \
+    cockpit-bridge \
+    cockpit-machines \
+    cockpit-storaged \
+    cockpit-ostree \
+    cockpit-pcp \
+    python3-pcp \
+    cockpit-system \
+    cockpit-ws \
+    libvirt \
+    libvirt-dbus \
+    qemu-img \
+    qemu-kvm \
+    biosdevname \
+    qemu-kvm-device-usb-host \
+    virt-install \
+    setroubleshoot-server \
+    dbus-tools \
+    tuned \
+    irqbalance \
+    dialog \
+    ncurses \
+    novnc-1.4.0 \
+    exfatprogs \
+    insights-client \
+    redhat-release-eula \
+    rsyslog \
+    nftables \
+    cronie \
+    scap-security-guide-0.1.74 \
+    openscap-1.3.10 \
+    openscap-scanner-1.3.10 \
+    && dnf clean all
