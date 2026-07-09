@@ -1,0 +1,12 @@
+FROM registry.redhat.io/rhel9/rhel-bootc:9.6
+
+COPY amq-broker.container /usr/share/containers/systemd/amq-broker.container
+COPY broker-env.conf /etc/amq-broker/broker-env.conf
+
+# Data dir for broker persistence
+RUN mkdir -p /var/lib/amq-broker/data /etc/amq-broker/etc-override
+
+# MQTT port (1883) and the AMQ management console (8161)
+RUN systemctl enable firewalld && \
+    firewall-offline-cmd --add-port=1883/tcp && \
+    firewall-offline-cmd --add-port=8161/tcp

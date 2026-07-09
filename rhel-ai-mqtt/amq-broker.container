@@ -1,0 +1,25 @@
+[Unit]
+Description=Red Hat AMQ Broker - edge MQTT messaging
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+# Multiarch image
+Image=registry.redhat.io/amq7/amq-broker-rhel8:7.12
+ContainerName=amq-broker
+EnvironmentFile=/etc/amq-broker/broker-env.conf
+
+PublishPort=1883:1883
+PublishPort=8161:8161
+
+Volume=/var/lib/amq-broker/data:/opt/amq/data:Z
+Volume=/etc/amq-broker/etc-override:/amq/init/config/etc-override:Z
+
+Memory=512m
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target default.target
