@@ -1,7 +1,10 @@
 ARG BASE_IMAGE_RELEASE='9'
 ARG BASE_IMAGE_TAG='9.6'
+ARG RHEM_RELEASE='1.1'
+
 #ARG BASE_IMAGE_RELEASE='10'
 #ARG BASE_IMAGE_TAG='10.2'
+#ARG RHEM_RELEASE='1.2'
 
 FROM registry.redhat.io/rhel${BASE_IMAGE_RELEASE}/rhel-bootc:${BASE_IMAGE_TAG}
 
@@ -11,7 +14,7 @@ FROM registry.redhat.io/rhel${BASE_IMAGE_RELEASE}/rhel-bootc:${BASE_IMAGE_TAG}
 ################################################################################
 
 RUN dnf config-manager \
-        --set-enabled edge-manager-1.2-for-rhel-${BASE_IMAGE_RELEASE}-$(uname -m)-rpms && \
+        --set-enabled edge-manager-${RHEM_RELEASE}-for-rhel-${BASE_IMAGE_RELEASE}-$(uname -m)-rpms && \
     dnf -y install flightctl-agent flightctl-cli && \
     dnf -y clean all && \
     systemctl enable flightctl-agent.service && \
