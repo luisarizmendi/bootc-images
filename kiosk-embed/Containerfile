@@ -1,4 +1,9 @@
-FROM registry.redhat.io/rhel10/rhel-bootc:10.2
+ARG BASE_IMAGE_RELEASE='9'
+ARG BASE_IMAGE_TAG='9.6'
+#ARG BASE_IMAGE_RELEASE='10'
+#ARG BASE_IMAGE_TAG='10.2'
+
+FROM registry.redhat.io/rhel${BASE_IMAGE_RELEASE}/rhel-bootc:${BASE_IMAGE_TAG}
 
 
 ################################################################################
@@ -6,14 +11,14 @@ FROM registry.redhat.io/rhel10/rhel-bootc:10.2
 ################################################################################
 
 RUN dnf config-manager \
-        --set-enabled edge-manager-1.2-for-rhel-10-$(uname -m)-rpms && \
+        --set-enabled edge-manager-1.2-for-rhel-${BASE_IMAGE_RELEASE}-$(uname -m)-rpms && \
     dnf -y install flightctl-agent flightctl-cli && \
     dnf -y clean all && \
     systemctl enable flightctl-agent.service && \
     systemctl mask bootc-fetch-apply-updates.timer 
 
 # Optional: To enable podman-compose application support, uncomment below
- RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm && \
+ RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${BASE_IMAGE_RELEASE}.noarch.rpm && \
      dnf -y install podman-compose && \
      dnf -y clean all && \
      rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
@@ -44,41 +49,41 @@ RUN systemctl set-default graphical.target
 ###########    EMBED IMAGES  
 
 
-## Extracts the list of MicroShift container image dependencies
-#ENV IMAGE_STORAGE_DIR=/usr/lib/containers/storage
-#ENV IMAGE_LIST_FILE=${IMAGE_STORAGE_DIR}/image-list.txt
-#ENV IMAGES="quay.io/luisarizmendi/tailwind-pos:latest"
+# Extracts the list of MicroShift container image dependencies
+ENV IMAGE_STORAGE_DIR=/usr/lib/containers/storage
+ENV IMAGE_LIST_FILE=${IMAGE_STORAGE_DIR}/image-list.txt
+ENV IMAGES="quay.io/luisarizmendi/tailwind-pos:latest"
 
 
-#RUN --mount=type=secret,id=PULL_SECRET,dst=/run/secrets/pull-secret.json \
-#    images="${IMAGES}" ; \
-#    mkdir -p "${IMAGE_STORAGE_DIR}" ; \
-#    for img in ${images} ; do \
-#        sha="$(echo "${img}" | sha256sum | awk '{print $1}')" ; \
-#        skopeo copy --all --preserve-digests \
-#            --authfile /run/secrets/pull-secret.json \
-#            "docker://${img}" "dir:$IMAGE_STORAGE_DIR/${sha}" ; \
-#        echo "${img},${sha}" >> "${IMAGE_LIST_FILE}" ; \
-#    done
+RUN --mount=type=secret,id=PULL_SECRET,dst=/run/secrets/pull-secret.json \
+    images="${IMAGES}" ; \
+    mkdir -p "${IMAGE_STORAGE_DIR}" ; \
+    for img in ${images} ; do \
+        sha="$(echo "${img}" | sha256sum | awk '{print $1}')" ; \
+        skopeo copy --all --preserve-digests \
+            --authfile /run/secrets/pull-secret.json \
+            "docker://${img}" "dir:$IMAGE_STORAGE_DIR/${sha}" ; \
+        echo "${img},${sha}" >> "${IMAGE_LIST_FILE}" ; \
+    done
 
-## Copy container images from the custom directory to the main container storage
-#RUN cat > /usr/bin/copy-embedded-images <<EOF
-##!/bin/bash
-#set -eux -o pipefail
-#while IFS="," read -r img sha ; do
-#    skopeo copy --preserve-digests \
-#        "dir:${IMAGE_STORAGE_DIR}/\${sha}" \
-#        "containers-storage:\${img}"
-#done < "${IMAGE_LIST_FILE}"
-#EOF
+# Copy container images from the custom directory to the main container storage
+RUN cat > /usr/bin/copy-embedded-images <<EOF
+#!/bin/bash
+set -eux -o pipefail
+while IFS="," read -r img sha ; do
+    skopeo copy --preserve-digests \
+        "dir:${IMAGE_STORAGE_DIR}/\${sha}" \
+        "containers-storage:\${img}"
+done < "${IMAGE_LIST_FILE}"
+EOF
 
-#RUN chmod 755 /usr/bin/copy-embedded-images && \
-#    mkdir -p /usr/lib/systemd/system/microshift.service.d
+RUN chmod 755 /usr/bin/copy-embedded-images && \
+    mkdir -p /usr/lib/systemd/system/microshift.service.d
 
-#RUN cat > /usr/lib/systemd/system/microshift.service.d/copy-embedded-images.conf <<EOF
-#[Service]
-#ExecStartPre=/usr/bin/copy-embedded-images
-#EOF
+RUN cat > /usr/lib/systemd/system/microshift.service.d/copy-embedded-images.conf <<EOF
+[Service]
+ExecStartPre=/usr/bin/copy-embedded-images
+EOF
 
 
 
