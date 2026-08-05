@@ -1,13 +1,16 @@
 ARG BASE_IMAGE_RELEASE='9'
 ARG BASE_IMAGE_TAG='9.6'
-ARG RHEM_RELEASE='1.1'
 
 #ARG BASE_IMAGE_RELEASE='10'
 #ARG BASE_IMAGE_TAG='10.2'
-#ARG RHEM_RELEASE='1.2'
 
 FROM registry.redhat.io/rhel${BASE_IMAGE_RELEASE}/rhel-bootc:${BASE_IMAGE_TAG}
 
+ARG BASE_IMAGE_RELEASE='9'
+ARG RHEM_RELEASE='1.1'
+
+#ARG BASE_IMAGE_RELEASE='10'
+#ARG RHEM_RELEASE='1.2'
 
 ################################################################################
 #Red Hat Edge Manager
