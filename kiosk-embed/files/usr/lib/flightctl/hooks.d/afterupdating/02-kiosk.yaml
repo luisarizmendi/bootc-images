@@ -1,0 +1,4 @@
+- if:
+  - path: /var/home/kiosk/.local/bin/gnome-kiosk-script
+    op: [created, updated, removed]
+  run: systemctl restart gdm

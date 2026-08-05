@@ -1,0 +1,9 @@
+[Unit]
+Description=PoS service
+After=network.target
+
+[Container]
+Image=quay.io/luisarizmendi/tailwind-pos:latest
+
+[Install]
+WantedBy=multi-user.target default.target

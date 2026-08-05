@@ -1,0 +1,10 @@
+[Template]
+EnvironmentFiles=/etc/os-release;
+
+[com.redhat.AccountsServiceUser.System]
+id='${ID}'
+version-id='${VERSION_ID}'
+
+[User]
+Session=gnome-kiosk-script
+Icon=${HOME}/.face
