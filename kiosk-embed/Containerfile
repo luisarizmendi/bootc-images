@@ -6,7 +6,7 @@ FROM registry.redhat.io/rhel10/rhel-bootc:10.2
 ################################################################################
 
 RUN dnf config-manager \
-        --set-enabled edge-manager-1.0-for-rhel-10-$(uname -m)-rpms && \
+        --set-enabled edge-manager-1.2-for-rhel-10-$(uname -m)-rpms && \
     dnf -y install flightctl-agent flightctl-cli && \
     dnf -y clean all && \
     systemctl enable flightctl-agent.service && \
