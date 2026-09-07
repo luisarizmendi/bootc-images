@@ -1,7 +1,7 @@
 #FROM registry.redhat.io/rhel9/rhel-bootc:9.6
 
 ## v3 move to rhel 10 ##########################################
-FROM registry.redhat.io/rhel10/rhel-bootc:10.1
+FROM registry.redhat.io/rhel10/rhel-bootc:10.2
 ################################################
 
 RUN dnf install -y greenboot greenboot-default-health-checks && \

@@ -30,6 +30,7 @@ RUN dnf config-manager \
      rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
      systemctl enable podman.service
 
+     
 ################################################################################
 # Customization
 ################################################################################
