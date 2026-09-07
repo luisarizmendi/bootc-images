@@ -895,6 +895,11 @@ jobs:
             echo "No config.toml found for ${{ matrix.dir }}, proceeding without custom configuration"
           fi
 
+          cat > /tmp/sequoia.config << 'EOF'
+          [hash_algorithms]
+          sha1 = 2030-01-01
+          EOF
+
           podman run \
             --rm \
             --privileged \
@@ -902,6 +907,7 @@ jobs:
             --security-opt label=type:unconfined_t \
             -v ${OUTPUT_DIR}:/output \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
+            -v /tmp/sequoia.config:/etc/crypto-policies/back-ends/sequoia.config:ro \
             ${CONFIG_MOUNT} \
             quay.io/centos-bootc/bootc-image-builder:latest \
             --type ${{ matrix.format }} \
