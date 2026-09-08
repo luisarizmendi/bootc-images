@@ -10,7 +10,7 @@ on:
       formats:
         description: 'Export formats (comma-separated)'
         required: true
-        default: 'anaconda-iso'
+        default: 'bootc-installer'
       base_path:
         description: 'Base path for image directories (e.g., "devices" or leave empty for root)'
         required: false
@@ -68,6 +68,17 @@ jobs:
             "readme.md"
           )
 
+          # Function to remap deprecated/renamed artifact format names to their
+          # image-builder equivalents. image-builder rejects "anaconda-iso" for
+          # bootc images ("image type bootc \"anaconda-iso\" is not supported
+          # with image-builder, please consider switching to \"bootc-installer\""),
+          # so any comma-separated format list (from workflow inputs, repo vars,
+          # or a directory's .buildconfig) is normalized through this before use.
+          remap_formats() {
+            local formats="$1"
+            echo "$formats" | sed 's/anaconda-iso/bootc-installer/g'
+          }
+
           # Inputs or defaults
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PLATFORMS="${{ github.event.inputs.platforms }}"
@@ -76,9 +87,15 @@ jobs:
             IMAGE_PREFIX="${{ github.event.inputs.image_prefix }}" 
           else
             PLATFORMS="linux/amd64,linux/arm64"
-            FORMATS="anaconda-iso"
+            FORMATS="bootc-installer"
             BASE_PATH="${{ vars.BASE_PATH || '' }}"
             IMAGE_PREFIX="${{ vars.IMAGE_PREFIX || 'bootc' }}"
+          fi
+
+          ORIGINAL_FORMATS="$FORMATS"
+          FORMATS=$(remap_formats "$FORMATS")
+          if [ "$FORMATS" != "$ORIGINAL_FORMATS" ]; then
+            echo "Remapped formats '$ORIGINAL_FORMATS' -> '$FORMATS' (anaconda-iso is not supported by image-builder for bootc images)"
           fi
 
           # Normalize base path (remove leading/trailing slashes)
@@ -188,6 +205,9 @@ jobs:
 
               # Get artifact formats if specified
               artifact_formats=$(grep -E '^artifact_formats\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^artifact_formats\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' ' || echo "")
+              if [ -n "$artifact_formats" ]; then
+                artifact_formats=$(remap_formats "$artifact_formats")
+              fi
             fi
 
             # Set default value for artifacts if not specified
@@ -461,7 +481,7 @@ jobs:
                   SHOULD_CREATE=true
                   # Use default format if none specified
                   if [ -z "$ARTIFACT_FORMATS" ]; then
-                    ARTIFACT_FORMATS="anaconda-iso"
+                    ARTIFACT_FORMATS="bootc-installer"
                   fi
                 else
                   echo "Artifacts already exist for $DIR, skipping auto-creation"
@@ -1391,11 +1411,11 @@ jobs:
           echo "- Version tags are created as vN (and vN-<arch> for platform images)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Platform restrictions can be specified using a \`.buildconfig\` file in each directory." >> "$GITHUB_STEP_SUMMARY"
           echo "- Base path can be configured using the \`BASE_PATH\` variable or workflow input." >> "$GITHUB_STEP_SUMMARY"
-          echo "- Installable artifacts are built with \`image-builder\` (ghcr.io/osbuild/image-builder-cli), the replacement for the deprecated \`bootc-image-builder\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Installable artifacts are built with \`image-builder\` (ghcr.io/osbuild/image-builder-cli), the replacement for the deprecated \`bootc-image-builder\`. Note: the bootc ISO installer type is now \`bootc-installer\`, not \`anaconda-iso\` (image-builder rejects \`anaconda-iso\` for bootc images)." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "#### .buildconfig options:" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`platforms: linux/amd64,linux/arm64\` - Restrict platforms for both bootc images and artifacts (default: linux/amd64,linux/arm64)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`artifacts: true|false|auto\` - Enable/disable artifact creation (default: auto - create if none exist)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`artifact_formats: anaconda-iso,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`artifact_formats: bootc-installer,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`build_args: KEY=VALUE\` - Pass build arguments to Buildah (repeat the line for multiple args)" >> "$GITHUB_STEP_SUMMARY"
