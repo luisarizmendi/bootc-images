@@ -707,13 +707,34 @@ jobs:
           echo "Build args: ${BUILD_ARG_FLAGS[*]:-<none>}"
           echo "Secrets mounted: ${#SECRET_FLAGS[@]} secret(s)"
 
-          buildah build \
-            --platform "${{ matrix.platform }}" \
-            --file "./${{ matrix.dir }}/Containerfile" \
-            "${TAG_FLAGS[@]}" \
-            "${BUILD_ARG_FLAGS[@]+"${BUILD_ARG_FLAGS[@]}"}" \
-            "${SECRET_FLAGS[@]+"${SECRET_FLAGS[@]}"}" \
-            "./${{ matrix.dir }}"
+          # The FROM image pull (e.g. registry.redhat.io/rhel10/rhel-bootc) can hit
+          # transient CDN blob errors ("unexpected EOF") mid-download, especially on
+          # the ARM runner pool. buildah build --retry only covers 3 attempts with a
+          # 2s delay by default, which isn't always enough for a large layer over a
+          # flaky connection, so bump both here. As a fallback, retry the whole
+          # buildah invocation a couple of times too, since a mid-stream EOF can
+          # sometimes corrupt local partial state that a fresh attempt clears.
+          BUILDAH_ATTEMPTS=3
+          for attempt in $(seq 1 "$BUILDAH_ATTEMPTS"); do
+            echo "buildah build attempt $attempt/$BUILDAH_ATTEMPTS"
+            if buildah build \
+              --platform "${{ matrix.platform }}" \
+              --retry 5 \
+              --retry-delay 5s \
+              --file "./${{ matrix.dir }}/Containerfile" \
+              "${TAG_FLAGS[@]}" \
+              "${BUILD_ARG_FLAGS[@]+"${BUILD_ARG_FLAGS[@]}"}" \
+              "${SECRET_FLAGS[@]+"${SECRET_FLAGS[@]}"}" \
+              "./${{ matrix.dir }}"; then
+              break
+            fi
+            if [ "$attempt" -eq "$BUILDAH_ATTEMPTS" ]; then
+              echo "buildah build failed after $BUILDAH_ATTEMPTS attempts"
+              exit 1
+            fi
+            echo "buildah build failed, retrying in 10s..."
+            sleep 10
+          done
 
           # Emit outputs for the push step
           echo "image=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
