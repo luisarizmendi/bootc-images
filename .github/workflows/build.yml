@@ -878,28 +878,32 @@ jobs:
           echo "=== Container images ==="
           podman image list
 
-      - name: Create bootc artifact with bootc-image-builder
+      - name: Create bootc artifact with image-builder
         run: |
           set -euo pipefail
 
           IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}:latest-${{ matrix.arch }}"
-          
+
           echo "Using output directory: $OUTPUT_DIR"
           echo "Creating ${{ matrix.format }} artifact for $IMAGE"
 
+          # image-builder (the bootc-image-builder replacement) does not auto-mount
+          # /config.toml like the old tool did — the blueprint must be passed
+          # explicitly with --blueprint.
           CONFIG_MOUNT=""
+          BLUEPRINT_FLAG=""
           if [ -f "./${{ matrix.dir }}/config.toml" ]; then
             echo "Found config.toml for ${{ matrix.dir }}, will mount it"
             CONFIG_MOUNT="-v ./${{ matrix.dir }}/config.toml:/config.toml:ro"
+            BLUEPRINT_FLAG="--blueprint /config.toml"
           else
             echo "No config.toml found for ${{ matrix.dir }}, proceeding without custom configuration"
           fi
 
-          cat > /tmp/sequoia.config << 'EOF'
-          [hash_algorithms]
-          sha1 = 2030-01-01
-          EOF
-
+          # image-builder requires the source container to already be present in
+          # local container storage (the "Pull bootc image for artifact creation"
+          # step above handles that) — it has no --pull equivalent for the
+          # --bootc-ref image itself.
           podman run \
             --rm \
             --privileged \
@@ -907,12 +911,12 @@ jobs:
             --security-opt label=type:unconfined_t \
             -v ${OUTPUT_DIR}:/output \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
-            -v /tmp/sequoia.config:/etc/crypto-policies/back-ends/sequoia.config:ro \
             ${CONFIG_MOUNT} \
-            quay.io/centos-bootc/bootc-image-builder:latest \
-            --type ${{ matrix.format }} \
-            --use-librepo=True \
-            "$IMAGE"
+            ghcr.io/osbuild/image-builder-cli:latest \
+            build \
+            --bootc-ref "$IMAGE" \
+            ${BLUEPRINT_FLAG} \
+            ${{ matrix.format }}
 
           echo "Created artifacts:"
           ls -la ${OUTPUT_DIR}/
@@ -931,7 +935,7 @@ jobs:
 
           echo "Removing $IMAGE"
           podman rmi "$IMAGE" || true
-          podman rmi quay.io/centos-bootc/bootc-image-builder:latest || true
+          podman rmi ghcr.io/osbuild/image-builder-cli:latest || true
 
       - name: Check available disk space
         run: |
@@ -1366,6 +1370,7 @@ jobs:
           echo "- Version tags are created as vN (and vN-<arch> for platform images)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Platform restrictions can be specified using a \`.buildconfig\` file in each directory." >> "$GITHUB_STEP_SUMMARY"
           echo "- Base path can be configured using the \`BASE_PATH\` variable or workflow input." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Installable artifacts are built with \`image-builder\` (ghcr.io/osbuild/image-builder-cli), the replacement for the deprecated \`bootc-image-builder\`." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "#### .buildconfig options:" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`platforms: linux/amd64,linux/arm64\` - Restrict platforms for both bootc images and artifacts (default: linux/amd64,linux/arm64)" >> "$GITHUB_STEP_SUMMARY"
