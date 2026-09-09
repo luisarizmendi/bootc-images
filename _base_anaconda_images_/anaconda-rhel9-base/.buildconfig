@@ -1,0 +1,9 @@
+# Shared Anaconda installer base (RHEL 9), under _base_anaconda_images_/.
+# This image is only ever used as a --bootc-ref installer environment for
+# other directories' ISOs, so it must never try to build installable
+# artifacts from itself.
+artifacts: false
+
+platforms: linux/amd64,linux/arm64
+
+keep_version: false
