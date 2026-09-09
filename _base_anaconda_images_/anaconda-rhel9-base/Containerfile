@@ -17,17 +17,27 @@
 
 FROM registry.redhat.io/rhel9/rhel-bootc:9.6
 
-RUN dnf install -y \
+# grub2-efi-x64-cdboot/grub2-pc-modules are x86_64-only (arm64 has no BIOS
+# boot at all, so no grub2-pc-modules equivalent); arm64 uses
+# grub2-efi-aa64-cdboot instead. TARGETARCH is set automatically by
+# buildah/podman from --platform, no --build-arg needed.
+ARG TARGETARCH
+
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      arm64) GRUB_PKGS="grub2-efi-aa64-cdboot" ;; \
+      *) GRUB_PKGS="grub2-efi-x64-cdboot grub2-pc-modules" ;; \
+    esac; \
+    dnf install -y \
         anaconda \
         anaconda-install-env-deps \
         dracut-config-generic \
         dracut-network \
-        grub2-efi-x64-cdboot \
-        grub2-pc-modules \
         grub2-common \
         xorriso \
         squashfs-tools \
-        jq && \
+        jq \
+        $GRUB_PKGS && \
     dnf clean all
 
 # Container-native ISO contract: shim/grub2 EFI binaries must be under
