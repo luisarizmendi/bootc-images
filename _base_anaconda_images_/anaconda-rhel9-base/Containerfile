@@ -40,29 +40,33 @@ RUN set -eu; \
         $GRUB_PKGS && \
     dnf clean all
 
-# Container-native ISO contract: shim/grub2 EFI binaries (shimx64.efi,
-# mmx64.efi, gcdx64.efi) must end up under /boot/efi/EFI/$VENDOR. On
-# Fedora these are pre-staged by the shim/grub2-efi packages under a
-# vendored /usr/lib/efi/*/*/EFI directory (see the upstream example at
-# https://github.com/osbuild/image-builder/blob/main/doc/20-advanced/20-bootc/10-isos.md).
-# Whether RHEL vendors them at the exact same depth is unverified, so this
-# looks for it and fails loudly with the real file locations if not found,
-# instead of guessing again.
+# Confirmed by testing (on the RHEL 10 base): on RHEL, shim-x64/grub2-efi-
+# x64-cdboot (and the aa64 equivalents) write shimx64.efi, mmx64.efi,
+# gcdx64.efi directly to /boot/efi/EFI/redhat/ as part of the package
+# install itself, no copy step needed. This differs from the Fedora
+# upstream example, which vendors them under /usr/lib/efi/*/*/EFI instead
+# (that path doesn't exist on RHEL at all). Ignore
+# /usr/lib/bootupd/updates/EFI/... too: that's bootupd's own update
+# payload for a running bootc system, not what image-builder's ISO
+# contract reads at build time.
+# Verified on RHEL 10/x86_64; RHEL 9 and arm64 assumed to follow the same
+# shim/grub2 naming convention (x64 -> aa64 suffix) but not individually
+# confirmed, so this fails loudly with the real directory contents if
+# that assumption is wrong.
 RUN set -eu; \
-    mkdir -p /boot/efi; \
-    VENDOR_EFI_DIR=$(find /usr/lib/efi -mindepth 2 -maxdepth 4 -type d -name EFI 2>/dev/null | head -n1); \
-    if [ -z "$VENDOR_EFI_DIR" ]; then \
-        echo "ERROR: no vendored EFI dir found under /usr/lib/efi/*/*/EFI"; \
-        echo "--- full tree under /usr/lib/efi (if it exists) ---"; \
-        find /usr/lib/efi 2>&1 || echo "(/usr/lib/efi does not exist)"; \
-        echo "--- rpm -ql for the shim/grub2-efi packages installed ---"; \
-        rpm -ql shim-x64 shim-aa64 grub2-efi-x64-cdboot grub2-efi-aa64-cdboot 2>&1 || true; \
-        echo "--- system-wide search for shim/grub EFI binaries ---"; \
-        find / -xdev \( -iname 'shim*.efi' -o -iname 'mm*.efi' -o -iname 'grub*.efi' \) 2>/dev/null; \
-        exit 1; \
-    fi; \
-    echo "Using vendored EFI dir: $VENDOR_EFI_DIR"; \
-    cp -a "$VENDOR_EFI_DIR" /boot/efi/
+    case "$TARGETARCH" in \
+      arm64) SUFFIX="aa64" ;; \
+      *) SUFFIX="x64" ;; \
+    esac; \
+    for f in "shim${SUFFIX}.efi" "mm${SUFFIX}.efi" "gcd${SUFFIX}.efi"; do \
+        if [ ! -f "/boot/efi/EFI/redhat/$f" ]; then \
+            echo "ERROR: expected /boot/efi/EFI/redhat/$f after installing shim/grub2-efi packages, but it is missing."; \
+            echo "--- contents of /boot/efi/EFI ---"; \
+            find /boot/efi/EFI 2>&1 || echo "(/boot/efi/EFI does not exist)"; \
+            exit 1; \
+        fi; \
+    done; \
+    echo "Confirmed shim/grub2 EFI binaries present under /boot/efi/EFI/redhat/"
 
 # Let Anaconda run as an installer environment instead of a normal login.
 RUN echo "install:x:0:0:root:/root:/usr/libexec/anaconda/run-anaconda" >> /etc/passwd && \
