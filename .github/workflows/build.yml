@@ -224,6 +224,28 @@ jobs:
             echo "$create_artifacts|$artifact_formats|$dir_platforms"
           }
 
+          # Function to get the shared installer base for a given app directory.
+          # ISO-style bootc formats (bootc-installer, bootc-generic-iso) need a
+          # separate Anaconda installer image. The value here is the name of
+          # another top-level directory that builds that shared base image
+          # (Anaconda + tooling, no kickstart, e.g. "anaconda-rhel10-base").
+          # This directory's own ./installer/Containerfile is built locally on
+          # top of that base (see the build-artifacts job) to add its
+          # kickstart and iso.yaml. The local result is used as --bootc-ref,
+          # while this directory's own image becomes
+          # --bootc-installer-payload-ref.
+          get_installer_base() {
+            local dir="$1"
+
+            if [ -f "$dir/.buildconfig" ]; then
+              local installer_base=$(grep -E '^installer_base\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^installer_base\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' ')
+              echo "$installer_base"
+              return
+            fi
+
+            echo ""
+          }
+
           # Function to check if artifacts exist for an image
           check_existing_artifacts() {
             local image_base="$1"
@@ -294,6 +316,13 @@ jobs:
             echo "$(basename "$full_path")"
           }
 
+          # _base_anaconda_images_ is a container directory, not an app: the
+          # shared Anaconda installer base images it holds live one level
+          # deeper (e.g. _base_anaconda_images_/anaconda-rhel10-base/), so it
+          # needs its own two-levels-deep scan alongside the normal
+          # one-level app detection above.
+          ANACONDA_BASE_DIR="${BASE_PATH:+$BASE_PATH/}_base_anaconda_images_"
+
           # Detect changed directories under the base path
           if [ "${{ github.event_name }}" = "push" ]; then
             BEFORE="${{ github.event.before }}"
@@ -336,6 +365,16 @@ jobs:
             else
               CHANGED_DIRS=""
             fi
+
+            # Extract subdirectories of _base_anaconda_images_ (two levels deep)
+            ANACONDA_CHANGED_DIRS=$(echo "$FILTERED_FILES" | \
+              grep "^${ANACONDA_BASE_DIR}/[^/]\+/" | \
+              sed "s#^\(${ANACONDA_BASE_DIR}/[^/]\+\)/.*#\1#" | \
+              sort -u || echo "")
+            if [ -n "$ANACONDA_CHANGED_DIRS" ]; then
+              echo "Changed anaconda base directories: $ANACONDA_CHANGED_DIRS"
+              CHANGED_DIRS=$(printf '%s\n%s\n' "$CHANGED_DIRS" "$ANACONDA_CHANGED_DIRS" | sed '/^$/d' | sort -u)
+            fi
           else
             # For manual runs, find all directories with a Containerfile under BASE_PATH
             if [ -n "$BASE_PATH" ]; then
@@ -348,9 +387,17 @@ jobs:
             else
               CHANGED_DIRS=$(find . -maxdepth 1 -type d ! -path . ! -path './.*' | sed 's#^\./##' | sort)
             fi
+
+            # Also pick up every subdirectory of _base_anaconda_images_ (two levels deep)
+            if [ -d "$ANACONDA_BASE_DIR" ]; then
+              ANACONDA_CHANGED_DIRS=$(find "$ANACONDA_BASE_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
+              echo "Anaconda base directories: $ANACONDA_CHANGED_DIRS"
+              CHANGED_DIRS=$(printf '%s\n%s\n' "$CHANGED_DIRS" "$ANACONDA_CHANGED_DIRS" | sed '/^$/d' | sort -u)
+            fi
           fi
 
           echo "Changed directories (raw): $CHANGED_DIRS"
+
 
           # Keep only those that currently exist AND contain a Containerfile AND have substantial changes
           BUILD_DIRS=()
@@ -468,6 +515,9 @@ jobs:
 
               echo "Directory $DIR artifact config - create: $CREATE_ARTIFACTS, formats: $ARTIFACT_FORMATS, platforms: $ARTIFACT_PLATFORMS"
 
+              INSTALLER_BASE=$(get_installer_base "$DIR")
+              echo "Directory $DIR installer base: ${INSTALLER_BASE:-<none>}"
+
               # Determine if we should create artifacts
               SHOULD_CREATE=false
               if [ "$CREATE_ARTIFACTS" = "true" ]; then
@@ -516,9 +566,20 @@ jobs:
                   fi
 
                   for ARTIFACT_FORMAT in "${ARTIFACT_FORMAT_ARRAY[@]}"; do
+                    if [ "$ARTIFACT_FORMAT" = "bootc-installer" ] || [ "$ARTIFACT_FORMAT" = "bootc-generic-iso" ]; then
+                      if [ -z "$INSTALLER_BASE" ]; then
+                        echo "::error::Directory $DIR requests artifact format '$ARTIFACT_FORMAT' but has no 'installer_base:' key in its .buildconfig. Set it to the name of an image built under _base_anaconda_images_/<name>/ (see _base_anaconda_images_/anaconda-rhel10-base/ for an example)."
+                        exit 1
+                      fi
+                      if [ ! -f "$DIR/installer/Containerfile" ]; then
+                        echo "::error::Directory $DIR requests artifact format '$ARTIFACT_FORMAT' with installer_base '$INSTALLER_BASE' but is missing $DIR/installer/Containerfile. Add a thin Containerfile there (FROM \${BASE_IMAGE}) plus this app's kickstart.ks and iso.yaml (see rhel/installer/ for an example)."
+                        exit 1
+                      fi
+                    fi
+
                     if [ $artifact_first -eq 0 ]; then ARTIFACT_MATRIX+=","; fi
                     artifact_first=0
-                    ARTIFACT_MATRIX+="{\"platform\":\"$ARTIFACT_PLATFORM\",\"arch\":\"$ARTIFACT_ARCH\",\"runner\":\"$ARTIFACT_RUNNER\",\"dir\":\"$DIR\",\"image_name\":\"$IMAGE_NAME\",\"format\":\"$ARTIFACT_FORMAT\",\"keep_version\":\"$KEEP_VERSION\"}"
+                    ARTIFACT_MATRIX+="{\"platform\":\"$ARTIFACT_PLATFORM\",\"arch\":\"$ARTIFACT_ARCH\",\"runner\":\"$ARTIFACT_RUNNER\",\"dir\":\"$DIR\",\"image_name\":\"$IMAGE_NAME\",\"format\":\"$ARTIFACT_FORMAT\",\"keep_version\":\"$KEEP_VERSION\",\"installer_base\":\"$INSTALLER_BASE\"}"
                   done
                 done
               fi
@@ -911,6 +972,23 @@ jobs:
           echo "Pulling bootc image: $IMAGE"
           podman pull "$IMAGE"
 
+      - name: Build installer image for ISO-style artifacts
+        if: matrix.installer_base != ''
+        run: |
+          set -euo pipefail
+          BASE_IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.installer_base }}:latest-${{ matrix.arch }}"
+          echo "Pulling shared installer base: $BASE_IMAGE"
+          podman pull "$BASE_IMAGE"
+
+          INSTALLER_IMAGE="localhost/${{ matrix.image_name }}-installer:latest"
+          echo "Building ${{ matrix.dir }}/installer on top of $BASE_IMAGE -> $INSTALLER_IMAGE"
+          podman build \
+            --build-arg BASE_IMAGE="$BASE_IMAGE" \
+            -t "$INSTALLER_IMAGE" \
+            "./${{ matrix.dir }}/installer"
+
+          echo "INSTALLER_IMAGE=$INSTALLER_IMAGE" >> "$GITHUB_ENV"
+
       - name: Check available disk space
         run: |
           echo "=== Disk space before build==="
@@ -941,10 +1019,23 @@ jobs:
             echo "No config.toml found for ${{ matrix.dir }}, proceeding without custom configuration"
           fi
 
-          # image-builder requires the source container to already be present in
-          # local container storage (the "Pull bootc image for artifact creation"
-          # step above handles that) — it has no --pull equivalent for the
-          # --bootc-ref image itself.
+          # image-builder requires the source container(s) to already be present
+          # in local container storage (the "Pull bootc image for artifact
+          # creation" and "Build installer image" steps above handle that) — it
+          # has no --pull equivalent for --bootc-ref/--bootc-installer-payload-ref.
+          #
+          # ISO-style bootc formats (bootc-installer, bootc-generic-iso) need
+          # two refs: the Anaconda installer environment (--bootc-ref) and the
+          # actual system to install (--bootc-installer-payload-ref). Disk
+          # formats (qcow2, raw, ami, vhd, gce, vmdk) only need --bootc-ref,
+          # pointed directly at this app's own image.
+          BOOTC_ARGS=(--bootc-ref "$IMAGE")
+          if [ -n "${INSTALLER_IMAGE:-}" ]; then
+            echo "Using installer image as --bootc-ref: $INSTALLER_IMAGE"
+            echo "Using $IMAGE as --bootc-installer-payload-ref"
+            BOOTC_ARGS=(--bootc-ref "$INSTALLER_IMAGE" --bootc-installer-payload-ref "$IMAGE")
+          fi
+
           podman run \
             --rm \
             --privileged \
@@ -955,7 +1046,7 @@ jobs:
             ${CONFIG_MOUNT} \
             ghcr.io/osbuild/image-builder-cli:latest \
             build \
-            --bootc-ref "$IMAGE" \
+            "${BOOTC_ARGS[@]}" \
             ${BLUEPRINT_FLAG} \
             ${{ matrix.format }}
 
@@ -976,6 +1067,10 @@ jobs:
 
           echo "Removing $IMAGE"
           podman rmi "$IMAGE" || true
+          if [ -n "${INSTALLER_IMAGE:-}" ]; then
+            echo "Removing $INSTALLER_IMAGE"
+            podman rmi "$INSTALLER_IMAGE" || true
+          fi
           podman rmi ghcr.io/osbuild/image-builder-cli:latest || true
 
       - name: Check available disk space
@@ -1314,6 +1409,14 @@ jobs:
             echo "$create_artifacts,$artifact_formats"
           }
 
+          get_installer_base() {
+            local dir="$1"
+
+            if [ -f "$dir/.buildconfig" ]; then
+              grep -E '^installer_base\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^installer_base\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' '
+            fi
+          }
+
           get_image_name() {
             local full_path="$1"
             echo "$(basename "$full_path")"
@@ -1366,6 +1469,15 @@ jobs:
                 EXTRA_INFO="build_args: $BUILD_ARGS"
               fi
             fi
+
+            INSTALLER_BASE=$(get_installer_base "$DIR")
+            if [ -n "$INSTALLER_BASE" ]; then
+              if [ -n "$EXTRA_INFO" ]; then
+                EXTRA_INFO="$EXTRA_INFO, installer_base: $INSTALLER_BASE"
+              else
+                EXTRA_INFO="installer_base: $INSTALLER_BASE"
+              fi
+            fi
             
             if [ -n "$EXTRA_INFO" ]; then
               echo "- **$IMAGE_NAME** (from $DIR, $EXTRA_INFO): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-$IMAGE_NAME:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
@@ -1411,11 +1523,13 @@ jobs:
           echo "- Version tags are created as vN (and vN-<arch> for platform images)." >> "$GITHUB_STEP_SUMMARY"
           echo "- Platform restrictions can be specified using a \`.buildconfig\` file in each directory." >> "$GITHUB_STEP_SUMMARY"
           echo "- Base path can be configured using the \`BASE_PATH\` variable or workflow input." >> "$GITHUB_STEP_SUMMARY"
-          echo "- Installable artifacts are built with \`image-builder\` (ghcr.io/osbuild/image-builder-cli), the replacement for the deprecated \`bootc-image-builder\`. Note: the bootc ISO installer type is now \`bootc-installer\`, not \`anaconda-iso\` (image-builder rejects \`anaconda-iso\` for bootc images)." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Installable artifacts are built with \`image-builder\` (ghcr.io/osbuild/image-builder-cli), the replacement for the deprecated \`bootc-image-builder\`. \`anaconda-iso\` is not supported for bootc images; use \`bootc-generic-iso\` (preferred) or \`bootc-installer\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`bootc-generic-iso\` and \`bootc-installer\` both need a paired Anaconda installer image, configured via a directory's \`installer_base:\` key plus an \`installer/Containerfile\` inside that same directory. Kickstart and grub/ISO config for that installer live in \`installer/kickstart.ks\` and \`installer/iso.yaml\`, not in this workflow." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "#### .buildconfig options:" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`platforms: linux/amd64,linux/arm64\` - Restrict platforms for both bootc images and artifacts (default: linux/amd64,linux/arm64)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`artifacts: true|false|auto\` - Enable/disable artifact creation (default: auto - create if none exist)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`artifact_formats: bootc-installer,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`artifact_formats: bootc-generic-iso,bootc-installer,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`installer_base: <name>\` - Required for \`bootc-generic-iso\`/\`bootc-installer\`. Names an image built under \`_base_anaconda_images_/<name>/\`; this directory must also have its own \`installer/Containerfile\` that layers its kickstart and iso.yaml on top of that base" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`build_args: KEY=VALUE\` - Pass build arguments to Buildah (repeat the line for multiple args)" >> "$GITHUB_STEP_SUMMARY"
