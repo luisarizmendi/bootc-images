@@ -52,11 +52,13 @@ RUN set -eu; \
     mkdir -p /boot/efi; \
     VENDOR_EFI_DIR=$(find /usr/lib/efi -mindepth 2 -maxdepth 4 -type d -name EFI 2>/dev/null | head -n1); \
     if [ -z "$VENDOR_EFI_DIR" ]; then \
-        echo "ERROR: no vendored EFI dir found under /usr/lib/efi/*/*/EFI" >&2; \
-        echo "--- rpm -ql for the shim/grub2-efi packages installed ---" >&2; \
-        rpm -ql shim-x64 shim-aa64 grub2-efi-x64-cdboot grub2-efi-aa64-cdboot 2>/dev/null >&2 || true; \
-        echo "--- system-wide search for shim/grub EFI binaries ---" >&2; \
-        find / -xdev \( -iname 'shim*.efi' -o -iname 'mm*.efi' -o -iname 'grub*.efi' \) 2>/dev/null >&2 || true; \
+        echo "ERROR: no vendored EFI dir found under /usr/lib/efi/*/*/EFI"; \
+        echo "--- full tree under /usr/lib/efi (if it exists) ---"; \
+        find /usr/lib/efi 2>&1 || echo "(/usr/lib/efi does not exist)"; \
+        echo "--- rpm -ql for the shim/grub2-efi packages installed ---"; \
+        rpm -ql shim-x64 shim-aa64 grub2-efi-x64-cdboot grub2-efi-aa64-cdboot 2>&1 || true; \
+        echo "--- system-wide search for shim/grub EFI binaries ---"; \
+        find / -xdev \( -iname 'shim*.efi' -o -iname 'mm*.efi' -o -iname 'grub*.efi' \) 2>/dev/null; \
         exit 1; \
     fi; \
     echo "Using vendored EFI dir: $VENDOR_EFI_DIR"; \
