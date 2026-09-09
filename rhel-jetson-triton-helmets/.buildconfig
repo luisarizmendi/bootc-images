@@ -9,7 +9,7 @@ platforms: linux/arm64
 #artifacts: true
 
 # Valid values: bootc-generic-iso, bootc-installer, qcow2, vmdk, raw, ami, vhd, gce
-artifact_formats: bootc-generic-iso
+#artifact_formats: raw
 
 ##### INSTALLER (required for bootc-generic-iso and bootc-installer formats)
 # Name of the image built under _base_anaconda_images_/<name>/ (Anaconda +
@@ -19,7 +19,7 @@ artifact_formats: bootc-generic-iso
 # --bootc-ref. This app's own image is passed as
 # --bootc-installer-payload-ref. Edit ./installer/kickstart.ks and
 # ./installer/iso.yaml to customize this app's install, not the workflow.
-installer_base: anaconda-rhel10-base
+installer_base: anaconda-rhel9-base
 
 ##### VERSION MANAGEMENT
 # Valid values: true, false
