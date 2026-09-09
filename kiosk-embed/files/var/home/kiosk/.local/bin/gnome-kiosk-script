@@ -1,8 +1,0 @@
-#!/bin/sh
-set -Eeuo pipefail
-export MOZ_ENABLE_WAYLAND=1
-while ! curl -sf --connect-timeout 5 --expect100-timeout 5 https://www.genlogic.com/html5_demos/process_demo_full.html; do
-    echo "Waiting for the Kiosk APP to become available..."
-    sleep 10
-done
-exec /usr/bin/firefox --kiosk https://www.genlogic.com/html5_demos/process_demo_full.html

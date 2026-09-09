@@ -1,25 +1,34 @@
-ARG BASE_IMAGE_TAG='9.6'
+#ARG BASE_IMAGE_RELEASE='9'
+#ARG BASE_IMAGE_TAG='9.6'
 
-########################################
-FROM registry.redhat.io/rhel9/rhel-bootc:${BASE_IMAGE_TAG}
+ARG BASE_IMAGE_RELEASE='10'
+ARG BASE_IMAGE_TAG='10.2'
 
+FROM registry.redhat.io/rhel${BASE_IMAGE_RELEASE}/rhel-bootc:${BASE_IMAGE_TAG}
+
+##ARG BASE_IMAGE_RELEASE='9'
+##ARG RHEM_RELEASE='1.1'
+#
+#ARG BASE_IMAGE_RELEASE='10'
+#ARG RHEM_RELEASE='1.3'
+#
 ################################################################################
 #Red Hat Edge Manager
 ################################################################################
 
-RUN dnf config-manager \
-        --set-enabled edge-manager-1.0-for-rhel-9-$(uname -m)-rpms && \
-    dnf -y install flightctl-agent flightctl-cli && \
-    dnf -y clean all && \
-    systemctl enable flightctl-agent.service && \
-    systemctl mask bootc-fetch-apply-updates.timer 
-
-# Optional: To enable podman-compose application support, uncomment below
- RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
-     dnf -y install podman-compose && \
-     dnf -y clean all && \
-     rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
-     systemctl enable podman.service
+#RUN dnf config-manager \
+#        --set-enabled edge-manager-${RHEM_RELEASE}-for-rhel-${BASE_IMAGE_RELEASE}-$(uname -m)-rpms && \
+#    dnf -y install flightctl-agent flightctl-cli && \
+#    dnf -y clean all && \
+#    systemctl enable flightctl-agent.service && \
+#    systemctl mask bootc-fetch-apply-updates.timer 
+#
+## Optional: To enable podman-compose application support, uncomment below
+# RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${BASE_IMAGE_RELEASE}.noarch.rpm && \
+#     dnf -y install podman-compose && \
+#     dnf -y clean all && \
+#     rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
+#     systemctl enable podman.service
 
 ################################################################################
 # Customization
