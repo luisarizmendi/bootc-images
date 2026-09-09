@@ -1,0 +1,50 @@
+## Shared Anaconda installer environment for RHEL 10 bootc payloads.
+## Lives under _base_anaconda_images_/ (not a regular app directory) so it
+## reads clearly as build infrastructure rather than something deployed.
+##
+## This image is NOT deployed to any device. It is only ever used as the
+## --bootc-ref (installer environment) when building a bootc-generic-iso,
+## paired with an app's own image passed as --bootc-installer-payload-ref.
+##
+## Keep this generic: no kickstart, no per-app config. Per-app ISO details
+## (kickstart, grub label/entries) live in <app>/installer/ directories that
+## FROM this image. Rebuild this only when Anaconda/tooling itself needs to
+## change; app teams should not need to touch it.
+
+FROM registry.redhat.io/rhel10/rhel-bootc:10.2
+
+RUN dnf install -y \
+        anaconda \
+        anaconda-install-env-deps \
+        dracut-config-generic \
+        dracut-network \
+        grub2-efi-x64-cdboot \
+        grub2-pc-modules \
+        grub2-common \
+        xorriso \
+        squashfs-tools \
+        jq && \
+    dnf clean all
+
+# Container-native ISO contract: shim/grub2 EFI binaries must be under
+# /boot/efi/EFI/$VENDOR. The rhel-bootc base already ships them under
+# /usr/lib/efi/shim/*/EFI/$VENDOR, so copy them into place.
+RUN mkdir -p /boot/efi && cp -a /usr/lib/efi/shim/*/EFI /boot/efi/
+
+# Let Anaconda run as an installer environment instead of a normal login.
+RUN echo "install:x:0:0:root:/root:/usr/libexec/anaconda/run-anaconda" >> /etc/passwd && \
+    echo "install::14438:0:99999:7:::" >> /etc/shadow && \
+    passwd -d root && \
+    mv /etc/yum.repos.d /etc/anaconda.repos.d && \
+    ln -sf /usr/lib/systemd/system/anaconda.target /etc/systemd/system/default.target && \
+    rm -f /usr/lib/systemd/system-generators/systemd-gpt-auto-generator && \
+    ln -sf /usr/lib/systemd/system/anaconda-shell@.service /usr/lib/systemd/system/autovt@.service
+
+RUN mkdir -p "$(realpath /root)"
+
+# Rebuild the initramfs with the anaconda dracut module so the kernel we
+# ship can actually boot into the installer.
+RUN kernel=$(kernel-install list --json pretty | jq -r '.[] | select(.has_kernel == true) | .version') && \
+    DRACUT_NO_XATTR=1 dracut --force -v --reproducible --no-hostonly \
+        --add "anaconda" \
+        "/usr/lib/modules/${kernel}/initramfs.img" "${kernel}"
