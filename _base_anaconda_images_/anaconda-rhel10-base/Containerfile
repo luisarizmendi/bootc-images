@@ -40,7 +40,6 @@ RUN set -eu; \
         grub2-common \
         xorriso \
         squashfs-tools \
-        jq \
         $GRUB_PKGS && \
     dnf reinstall -y grub2-common $GRUB_PKGS && \
     dnf clean all
@@ -81,7 +80,20 @@ RUN mkdir -p "$(realpath /root)"
 
 # Rebuild the initramfs with the anaconda dracut module so the kernel we
 # ship can actually boot into the installer.
-RUN kernel=$(kernel-install list --json pretty | jq -r '.[] | select(.has_kernel == true) | .version') && \
+# Using /usr/lib/modules directly instead of kernel-install list --json:
+# that subcommand isn't supported on RHEL 9's older kernel-install (fails
+# with "unknown command 'list'"), and on failure the command substitution
+# would silently resolve to an empty string, making dracut fall back to
+# the HOST runner's kernel instead of anything inside the container.
+# /usr/lib/modules works the same way on every RHEL/Fedora version.
+RUN set -eu; \
+    KVER=$(basename "$(find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"); \
+    if [ -z "$KVER" ] || [ ! -f "/usr/lib/modules/${KVER}/vmlinuz" ]; then \
+        echo "ERROR: could not find an installed kernel under /usr/lib/modules"; \
+        ls -la /usr/lib/modules 2>&1 || echo "(/usr/lib/modules does not exist)"; \
+        exit 1; \
+    fi; \
+    echo "Using kernel version: $KVER"; \
     DRACUT_NO_XATTR=1 dracut --force -v --reproducible --no-hostonly \
         --add "anaconda" \
-        "/usr/lib/modules/${kernel}/initramfs.img" "${kernel}"
+        "/usr/lib/modules/${KVER}/initramfs.img" "${KVER}"
