@@ -23,6 +23,13 @@ FROM registry.redhat.io/rhel9/rhel-bootc:9.6
 # buildah/podman from --platform, no --build-arg needed.
 ARG TARGETARCH
 
+# shim-x64 (confirmed) and possibly grub2-common/grub2-efi-*-cdboot ship
+# already "installed" in the rhel-bootc base image's RPM database, but
+# bootc's image compose step strips their actual /boot/efi payload (that
+# partition is managed separately by bootupd on a real bootc system, not
+# baked into the container). A plain dnf install is then a no-op for
+# anything already marked installed, so it never re-extracts the missing
+# files. dnf reinstall forces it.
 RUN set -eu; \
     case "$TARGETARCH" in \
       arm64) GRUB_PKGS="grub2-efi-aa64-cdboot shim-aa64" ;; \
@@ -31,6 +38,7 @@ RUN set -eu; \
     dnf install -y \
         anaconda \
         anaconda-install-env-deps \
+        anaconda-dracut \
         dracut-config-generic \
         dracut-network \
         grub2-common \
@@ -38,21 +46,14 @@ RUN set -eu; \
         squashfs-tools \
         jq \
         $GRUB_PKGS && \
+    dnf reinstall -y grub2-common $GRUB_PKGS && \
     dnf clean all
 
-# Confirmed by testing (on the RHEL 10 base): on RHEL, shim-x64/grub2-efi-
-# x64-cdboot (and the aa64 equivalents) write shimx64.efi, mmx64.efi,
-# gcdx64.efi directly to /boot/efi/EFI/redhat/ as part of the package
-# install itself, no copy step needed. This differs from the Fedora
-# upstream example, which vendors them under /usr/lib/efi/*/*/EFI instead
-# (that path doesn't exist on RHEL at all). Ignore
-# /usr/lib/bootupd/updates/EFI/... too: that's bootupd's own update
-# payload for a running bootc system, not what image-builder's ISO
-# contract reads at build time.
-# Verified on RHEL 10/x86_64; RHEL 9 and arm64 assumed to follow the same
-# shim/grub2 naming convention (x64 -> aa64 suffix) but not individually
-# confirmed, so this fails loudly with the real directory contents if
-# that assumption is wrong.
+# Verify the reinstall above actually produced the required files. If
+# this still fails, some other package is also pre-baked-but-stripped in
+# the base image the same way shim-x64 was (dnf reinstall -y <pkg> is the
+# fix for whichever one it turns out to be); the rpm -q listing below
+# shows exactly which package should own the missing file.
 RUN set -eu; \
     case "$TARGETARCH" in \
       arm64) SUFFIX="aa64" ;; \
@@ -60,9 +61,11 @@ RUN set -eu; \
     esac; \
     for f in "shim${SUFFIX}.efi" "mm${SUFFIX}.efi" "gcd${SUFFIX}.efi"; do \
         if [ ! -f "/boot/efi/EFI/redhat/$f" ]; then \
-            echo "ERROR: expected /boot/efi/EFI/redhat/$f after installing shim/grub2-efi packages, but it is missing."; \
+            echo "ERROR: expected /boot/efi/EFI/redhat/$f after installing/reinstalling shim/grub2-efi packages, but it is missing."; \
             echo "--- contents of /boot/efi/EFI ---"; \
             find /boot/efi/EFI 2>&1 || echo "(/boot/efi/EFI does not exist)"; \
+            echo "--- which package should own it ---"; \
+            rpm -qf "/boot/efi/EFI/redhat/$f" 2>&1 || true; \
             exit 1; \
         fi; \
     done; \
