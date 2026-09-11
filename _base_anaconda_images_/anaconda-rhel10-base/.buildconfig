@@ -7,4 +7,4 @@ artifacts: false
 # Build for whichever platforms your payloads need installers for.
 platforms: linux/amd64,linux/arm64
 
-keep_version: false
+keep_version: true

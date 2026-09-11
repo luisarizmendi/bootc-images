@@ -6,4 +6,4 @@ artifacts: false
 
 platforms: linux/amd64,linux/arm64
 
-keep_version: false
+keep_version: true
