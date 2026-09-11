@@ -40,7 +40,9 @@ RUN set -eu; \
         grub2-common \
         xorriso \
         squashfs-tools \
-        $GRUB_PKGS && \
+        lorax-templates-rhel \
+        python3-mako \
+        $GRUB_PKGS
     dnf reinstall -y grub2-common $GRUB_PKGS && \
     dnf clean all
 
