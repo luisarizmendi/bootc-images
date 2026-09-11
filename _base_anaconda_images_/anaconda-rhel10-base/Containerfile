@@ -42,6 +42,8 @@ RUN set -eu; \
         squashfs-tools \
         lorax-templates-rhel \
         python3-mako \
+        biosdevname \
+        prefixdevname \
         $GRUB_PKGS && \
     dnf reinstall -y grub2-common $GRUB_PKGS && \
     dnf clean all
