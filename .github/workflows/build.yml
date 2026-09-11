@@ -1421,8 +1421,13 @@ jobs:
             local dir="$1"
 
             if [ -f "$dir/.buildconfig" ]; then
-              grep -E '^installer_base\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^installer_base\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' '
+              local installer_base
+              installer_base=$(grep -E '^installer_base\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^installer_base\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' ' || echo "")
+              echo "$installer_base"
+              return
             fi
+
+            echo ""
           }
 
           get_image_name() {
