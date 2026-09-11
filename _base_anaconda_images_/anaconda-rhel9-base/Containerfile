@@ -32,8 +32,8 @@ ARG TARGETARCH
 # files. dnf reinstall forces it.
 RUN set -eu; \
     case "$TARGETARCH" in \
-      arm64) GRUB_PKGS="grub2-efi-aa64-cdboot shim-aa64" ;; \
-      *) GRUB_PKGS="grub2-efi-x64-cdboot grub2-pc-modules shim-x64" ;; \
+      arm64) GRUB_PKGS="grub2-efi-aa64-cdboot shim-aa64"; DEVNAME_PKGS="prefixdevname" ;; \
+      *) GRUB_PKGS="grub2-efi-x64-cdboot grub2-pc-modules shim-x64"; DEVNAME_PKGS="biosdevname prefixdevname" ;; \
     esac; \
     dnf install -y \
         anaconda \
@@ -46,8 +46,7 @@ RUN set -eu; \
         squashfs-tools \
         lorax-templates-rhel \
         python3-mako \
-        biosdevname \
-        prefixdevname \
+        $DEVNAME_PKGS \
         $GRUB_PKGS && \
     dnf reinstall -y grub2-common $GRUB_PKGS && \
     dnf clean all
