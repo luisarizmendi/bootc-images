@@ -68,9 +68,9 @@ RUN set -eu; \
 
 
 # Let Anaconda run as an installer environment instead of a normal login.
-RUN echo "install:x:0:0:root:/root:/usr/libexec/anaconda/run-anaconda" >> /etc/passwd && \
-    echo "install::14438:0:99999:7:::" >> /etc/shadow && \
-    passwd -d root && \
+#RUN echo "install:x:0:0:root:/root:/usr/libexec/anaconda/run-anaconda" >> /etc/passwd && \
+#    echo "install::14438:0:99999:7:::" >> /etc/shadow && \
+RUN passwd -d root && \
     mv /etc/yum.repos.d /etc/anaconda.repos.d && \
     ln -sf /usr/lib/systemd/system/anaconda.target /etc/systemd/system/default.target && \
     rm -f /usr/lib/systemd/system-generators/systemd-gpt-auto-generator && \
