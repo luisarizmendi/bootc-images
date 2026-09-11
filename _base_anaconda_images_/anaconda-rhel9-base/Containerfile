@@ -81,7 +81,8 @@ RUN passwd -d root && \
     rm -f /usr/lib/systemd/system-generators/systemd-gpt-auto-generator && \
     ln -sf /usr/lib/systemd/system/anaconda-shell@.service /usr/lib/systemd/system/autovt@.service
 
-RUN mkdir -p "$(realpath /root)"
+RUN mkdir -p "$(realpath /root)" && \
+    mkdir -p "$(realpath /mnt)"
 
 # Rebuild the initramfs with the anaconda dracut module so the kernel we
 # ship can actually boot into the installer.
