@@ -62,6 +62,21 @@ jobs:
       - name: Setup build parameters & detect changed directories
         id: setup
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PLATFORMS: ${{ github.event.inputs.platforms }}
+          INPUT_FORMATS: ${{ github.event.inputs.formats }}
+          INPUT_BASE_PATH: ${{ github.event.inputs.base_path }}
+          INPUT_IMAGE_PREFIX: ${{ github.event.inputs.image_prefix }}
+          INPUT_INSTALLER_BASE: ${{ github.event.inputs.installer_base }}
+          VARS_BASE_PATH: ${{ vars.BASE_PATH }}
+          VARS_IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+          VARS_INSTALLER_BASE: ${{ vars.INSTALLER_BASE }}
+          BEFORE_SHA: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+          DEST_REGISTRY_HOST: ${{ vars.DEST_REGISTRY_HOST }}
+          DEST_REGISTRY_USER: ${{ vars.DEST_REGISTRY_USER }}
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
 
@@ -84,18 +99,18 @@ jobs:
           }
 
           # Inputs or defaults
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            PLATFORMS="${{ github.event.inputs.platforms }}"
-            FORMATS="${{ github.event.inputs.formats }}"
-            BASE_PATH="${{ github.event.inputs.base_path }}"
-            IMAGE_PREFIX="${{ github.event.inputs.image_prefix }}" 
-            DEFAULT_INSTALLER_BASE="${{ github.event.inputs.installer_base }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PLATFORMS="$INPUT_PLATFORMS"
+            FORMATS="$INPUT_FORMATS"
+            BASE_PATH="$INPUT_BASE_PATH"
+            IMAGE_PREFIX="$INPUT_IMAGE_PREFIX" 
+            DEFAULT_INSTALLER_BASE="$INPUT_INSTALLER_BASE"
           else
             PLATFORMS="linux/amd64,linux/arm64"
             FORMATS="bootc-generic-iso"
-            BASE_PATH="${{ vars.BASE_PATH || '' }}"
-            IMAGE_PREFIX="${{ vars.IMAGE_PREFIX || 'bootc' }}"
-            DEFAULT_INSTALLER_BASE="${{ vars.INSTALLER_BASE || 'anaconda-rhel10-base' }}"
+            BASE_PATH="${VARS_BASE_PATH:-}"
+            IMAGE_PREFIX="${VARS_IMAGE_PREFIX:-bootc}"
+            DEFAULT_INSTALLER_BASE="${VARS_INSTALLER_BASE:-anaconda-rhel10-base}"
           fi
 
           ORIGINAL_FORMATS="$FORMATS"
@@ -349,9 +364,9 @@ jobs:
           ANACONDA_BASE_DIR="${BASE_PATH:+$BASE_PATH/}_base_anaconda_images_"
 
           # Detect changed directories under the base path
-          if [ "${{ github.event_name }}" = "push" ]; then
-            BEFORE="${{ github.event.before }}"
-            AFTER="${{ github.sha }}"
+          if [ "$EVENT_NAME" = "push" ]; then
+            BEFORE="$BEFORE_SHA"
+            AFTER="$SHA"
             echo "Diff range: $BEFORE..$AFTER"
             
             # Handle the case where BEFORE is the null SHA (initial commit or empty repository)
@@ -430,7 +445,7 @@ jobs:
           for d in $CHANGED_DIRS; do
             if [ -f "$d/Containerfile" ]; then
               # For push events, check if only blacklisted files changed
-              if [ "${{ github.event_name }}" = "push" ]; then
+              if [ "$EVENT_NAME" = "push" ]; then
                 if directory_has_substantial_changes "$d" "$BEFORE" "$AFTER"; then
                   BUILD_DIRS+=("$d")
                   IMAGE_NAME=$(get_image_name "$d")
@@ -531,7 +546,7 @@ jobs:
               done
 
               # Handle artifact configuration
-              IMAGE_BASE="${{ vars.DEST_REGISTRY_HOST || 'ghcr.io' }}/${{ vars.DEST_REGISTRY_USER || github.repository_owner }}/${IMAGE_PREFIX}-${IMAGE_NAME}"
+              IMAGE_BASE="${DEST_REGISTRY_HOST:-ghcr.io}/${DEST_REGISTRY_USER:-$REPO_OWNER}/${IMAGE_PREFIX}-${IMAGE_NAME}"
               ARTIFACT_CONFIG=$(get_artifact_config "$DIR" "$FORMATS" "$ALLOWED_PLATFORMS")
               IFS='|' read -ra CONFIG_PARTS <<< "$ARTIFACT_CONFIG"
               CREATE_ARTIFACTS="${CONFIG_PARTS[0]}"
@@ -666,13 +681,18 @@ jobs:
         run: dnf -y install podman buildah skopeo jq
 
       - name: Register with Red Hat subscription manager
+        env:
+          RHT_ORGID: ${{ secrets.RHT_ORGID }}
+          RHT_ACT_KEY: ${{ secrets.RHT_ACT_KEY }}
+          RH_USERNAME: ${{ secrets.RH_USERNAME }}
+          RH_PASSWORD: ${{ secrets.RH_PASSWORD }}
         run: |
-          if [ -n "${{ secrets.RHT_ORGID }}" ] && [ -n "${{ secrets.RHT_ACT_KEY }}" ]; then
+          if [ -n "$RHT_ORGID" ] && [ -n "$RHT_ACT_KEY" ]; then
             echo "Registering with organization ID and activation key..."
-            subscription-manager register --org=${{ secrets.RHT_ORGID }} --activationkey=${{ secrets.RHT_ACT_KEY }}
+            subscription-manager register --org=$RHT_ORGID --activationkey=$RHT_ACT_KEY
           else
             echo "Registering with username and password..."
-            subscription-manager register --username=${{ secrets.RH_USERNAME }} --password=${{ secrets.RH_PASSWORD }}
+            subscription-manager register --username=$RH_USERNAME --password=$RH_PASSWORD
           fi
           cat /var/log/rhsm/rhsm.log
 
@@ -694,12 +714,15 @@ jobs:
       - name: Compute semantic version tag (vN) for ${{ matrix.image_name }}
         id: version
         shell: bash
+        env:
+          MATRIX_IMAGE_NAME: ${{ matrix.image_name }}
+          MATRIX_KEEP_VERSION: ${{ matrix.keep_version }}
         run: |
           set -euo pipefail
 
-          IMAGE_NAME="${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}"
-          IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${IMAGE_NAME}"
-          KEEP_VERSION="${{ matrix.keep_version }}"
+          IMAGE_NAME="$IMAGE_PREFIX-$MATRIX_IMAGE_NAME"
+          IMAGE_BASE="$DEST_REGISTRY_HOST/$DEST_REGISTRY_USER/${IMAGE_NAME}"
+          KEEP_VERSION="$MATRIX_KEEP_VERSION"
 
           echo "Determining version for: $IMAGE_BASE"
           echo "Keep version setting: $KEEP_VERSION"
@@ -752,14 +775,21 @@ jobs:
           SECRET_WIFI_SSID: ${{ secrets.WIFI_SSID}}
           SECRET_WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
           # SECRET_MY_OTHER_SECRET: ${{ secrets.MY_OTHER_SECRET }}
+          MATRIX_IMAGE_NAME: ${{ matrix.image_name }}
+          MATRIX_ARCH: ${{ matrix.arch }}
+          MATRIX_PLATFORM: ${{ matrix.platform }}
+          MATRIX_DIR: ${{ matrix.dir }}
+          MATRIX_BUILD_ARGS: ${{ matrix.build_args }}
+          SHA: ${{ github.sha }}
+          NEXT_VERSION: ${{ steps.version.outputs.next }}
         run: |
           set -euo pipefail
 
-          IMAGE_NAME="${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}"
+          IMAGE_NAME="$DEST_REGISTRY_USER/$IMAGE_PREFIX-$MATRIX_IMAGE_NAME"
           TAGS=(
-            "latest-${{ matrix.arch }}"
-            "${{ github.sha }}-${{ matrix.arch }}"
-            "${{ steps.version.outputs.next }}-${{ matrix.arch }}"
+            "latest-$MATRIX_ARCH"
+            "$SHA-$MATRIX_ARCH"
+            "$NEXT_VERSION-$MATRIX_ARCH"
           )
 
           # Build --tag flags
@@ -770,7 +800,7 @@ jobs:
 
           # Build --build-arg flags from the comma-separated matrix value
           BUILD_ARG_FLAGS=()
-          RAW_ARGS="${{ matrix.build_args }}"
+          RAW_ARGS="$MATRIX_BUILD_ARGS"
           if [ -n "$RAW_ARGS" ]; then
             IFS=',' read -ra ARG_PAIRS <<< "$RAW_ARGS"
             for pair in "${ARG_PAIRS[@]}"; do
@@ -830,14 +860,14 @@ jobs:
           for attempt in $(seq 1 "$BUILDAH_ATTEMPTS"); do
             echo "buildah build attempt $attempt/$BUILDAH_ATTEMPTS"
             if buildah build \
-              --platform "${{ matrix.platform }}" \
+              --platform "$MATRIX_PLATFORM" \
               --retry 5 \
               --retry-delay 5s \
-              --file "./${{ matrix.dir }}/Containerfile" \
+              --file "./$MATRIX_DIR/Containerfile" \
               "${TAG_FLAGS[@]}" \
               "${BUILD_ARG_FLAGS[@]+"${BUILD_ARG_FLAGS[@]}"}" \
               "${SECRET_FLAGS[@]+"${SECRET_FLAGS[@]}"}" \
-              "./${{ matrix.dir }}"; then
+              "./$MATRIX_DIR"; then
               break
             fi
             if [ "$attempt" -eq "$BUILDAH_ATTEMPTS" ]; then
@@ -924,13 +954,18 @@ jobs:
           echo "Using output directory: $OUTPUT_DIR"
 
       - name: Register with Red Hat subscription manager
+        env:
+          RHT_ORGID: ${{ secrets.RHT_ORGID }}
+          RHT_ACT_KEY: ${{ secrets.RHT_ACT_KEY }}
+          RH_USERNAME: ${{ secrets.RH_USERNAME }}
+          RH_PASSWORD: ${{ secrets.RH_PASSWORD }}
         run: |
-          if [ -n "${{ secrets.RHT_ORGID }}" ] && [ -n "${{ secrets.RHT_ACT_KEY }}" ]; then
+          if [ -n "$RHT_ORGID" ] && [ -n "$RHT_ACT_KEY" ]; then
             echo "Registering with organization ID and activation key..."
-            subscription-manager register --org=${{ secrets.RHT_ORGID }} --activationkey=${{ secrets.RHT_ACT_KEY }}
+            subscription-manager register --org=$RHT_ORGID --activationkey=$RHT_ACT_KEY
           else
             echo "Registering with username and password..."
-            subscription-manager register --username=${{ secrets.RH_USERNAME }} --password=${{ secrets.RH_PASSWORD }}
+            subscription-manager register --username=$RH_USERNAME --password=$RH_PASSWORD
           fi
 
       - name: Workaround open podman-login action issue
@@ -951,12 +986,16 @@ jobs:
       - name: Determine image version
         id: version
         shell: bash
+        env:
+          MATRIX_IMAGE_NAME: ${{ matrix.image_name }}
+          MATRIX_KEEP_VERSION: ${{ matrix.keep_version }}
+          MATRIX_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
 
-          IMAGE_NAME="${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}"
-          IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${IMAGE_NAME}"
-          KEEP_VERSION="${{ matrix.keep_version }}"
+          IMAGE_NAME="$IMAGE_PREFIX-$MATRIX_IMAGE_NAME"
+          IMAGE_BASE="$DEST_REGISTRY_HOST/$DEST_REGISTRY_USER/${IMAGE_NAME}"
+          KEEP_VERSION="$MATRIX_KEEP_VERSION"
 
           echo "Determining version for: $IMAGE_BASE"
           echo "Keep version setting: $KEEP_VERSION"
@@ -984,7 +1023,7 @@ jobs:
               HIGHEST_NUM=$(echo "$HIGHEST_VERSION" | sed 's/v//')
               INCREMENTED_VERSION="v$((HIGHEST_NUM + 1))"
 
-              if skopeo inspect "docker://${IMAGE_BASE}:${INCREMENTED_VERSION}-${{ matrix.arch }}" >/dev/null 2>&1; then
+              if skopeo inspect "docker://${IMAGE_BASE}:${INCREMENTED_VERSION}-$MATRIX_ARCH" >/dev/null 2>&1; then
                 CURRENT_TAG="$INCREMENTED_VERSION"
                 echo "Using incremented version: $CURRENT_TAG"
               else
@@ -998,25 +1037,33 @@ jobs:
           echo "version=$CURRENT_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Pull bootc image for artifact creation
+        env:
+          MATRIX_IMAGE_NAME: ${{ matrix.image_name }}
+          MATRIX_ARCH: ${{ matrix.arch }}
         run: |
-          IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}:latest-${{ matrix.arch }}" 
+          IMAGE="$DEST_REGISTRY_HOST/$DEST_REGISTRY_USER/$IMAGE_PREFIX-$MATRIX_IMAGE_NAME:latest-$MATRIX_ARCH" 
           echo "Pulling bootc image: $IMAGE"
           podman pull "$IMAGE"
 
       - name: Build installer image for ISO-style artifacts
         if: matrix.installer_base != ''
+        env:
+          MATRIX_INSTALLER_BASE: ${{ matrix.installer_base }}
+          MATRIX_ARCH: ${{ matrix.arch }}
+          MATRIX_IMAGE_NAME: ${{ matrix.image_name }}
+          MATRIX_DIR: ${{ matrix.dir }}
         run: |
           set -euo pipefail
-          BASE_IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.installer_base }}:latest-${{ matrix.arch }}"
+          BASE_IMAGE="$DEST_REGISTRY_HOST/$DEST_REGISTRY_USER/$IMAGE_PREFIX-$MATRIX_INSTALLER_BASE:latest-$MATRIX_ARCH"
           echo "Pulling shared installer base: $BASE_IMAGE"
           podman pull "$BASE_IMAGE"
 
-          INSTALLER_IMAGE="localhost/${{ matrix.image_name }}-installer:latest"
-          echo "Building ${{ matrix.dir }}/installer on top of $BASE_IMAGE -> $INSTALLER_IMAGE"
+          INSTALLER_IMAGE="localhost/$MATRIX_IMAGE_NAME-installer:latest"
+          echo "Building $MATRIX_DIR/installer on top of $BASE_IMAGE -> $INSTALLER_IMAGE"
           podman build \
             --build-arg BASE_IMAGE="$BASE_IMAGE" \
             -t "$INSTALLER_IMAGE" \
-            "./${{ matrix.dir }}/installer"
+            "./$MATRIX_DIR/installer"
 
           echo "INSTALLER_IMAGE=$INSTALLER_IMAGE" >> "$GITHUB_ENV"
 
@@ -1031,25 +1078,30 @@ jobs:
           podman image list
 
       - name: Create bootc artifact with image-builder
+        env:
+          MATRIX_IMAGE_NAME: ${{ matrix.image_name }}
+          MATRIX_ARCH: ${{ matrix.arch }}
+          MATRIX_FORMAT: ${{ matrix.format }}
+          MATRIX_DIR: ${{ matrix.dir }}
         run: |
           set -euo pipefail
 
-          IMAGE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}:latest-${{ matrix.arch }}"
+          IMAGE="$DEST_REGISTRY_HOST/$DEST_REGISTRY_USER/$IMAGE_PREFIX-$MATRIX_IMAGE_NAME:latest-$MATRIX_ARCH"
 
           echo "Using output directory: $OUTPUT_DIR"
-          echo "Creating ${{ matrix.format }} artifact for $IMAGE"
+          echo "Creating $MATRIX_FORMAT artifact for $IMAGE"
 
           # image-builder (the bootc-image-builder replacement) does not auto-mount
           # /config.toml like the old tool did — the blueprint must be passed
           # explicitly with --blueprint.
           CONFIG_MOUNT=""
           BLUEPRINT_FLAG=""
-          if [ -f "./${{ matrix.dir }}/config.toml" ]; then
-            echo "Found config.toml for ${{ matrix.dir }}, will mount it"
-            CONFIG_MOUNT="-v ./${{ matrix.dir }}/config.toml:/config.toml:ro"
+          if [ -f "./$MATRIX_DIR/config.toml" ]; then
+            echo "Found config.toml for $MATRIX_DIR, will mount it"
+            CONFIG_MOUNT="-v ./$MATRIX_DIR/config.toml:/config.toml:ro"
             BLUEPRINT_FLAG="--blueprint /config.toml"
           else
-            echo "No config.toml found for ${{ matrix.dir }}, proceeding without custom configuration"
+            echo "No config.toml found for $MATRIX_DIR, proceeding without custom configuration"
           fi
 
           # image-builder requires the source container(s) to already be present
@@ -1090,7 +1142,7 @@ jobs:
             build \
             "${BOOTC_ARGS[@]}" \
             ${BLUEPRINT_FLAG} \
-            ${{ matrix.format }}"
+            $MATRIX_FORMAT"
 
           podman run \
             --rm \
@@ -1104,7 +1156,7 @@ jobs:
             build \
             "${BOOTC_ARGS[@]}" \
             ${BLUEPRINT_FLAG} \
-            ${{ matrix.format }}
+            $MATRIX_FORMAT
 
           echo "Created artifacts:"
           ls -la ${OUTPUT_DIR}/
@@ -1131,10 +1183,13 @@ jobs:
 
       - name: Inject kickstart into ISO artifacts with mkksiso
         if: matrix.installer_base != '' && matrix.inject_kickstart == 'true'
+        env:
+          MATRIX_DIR: ${{ matrix.dir }}
+          MATRIX_FORMAT: ${{ matrix.format }}
         run: |
           set -euo pipefail
 
-          KICKSTART_FILE="./${{ matrix.dir }}/installer/kickstart.ks"
+          KICKSTART_FILE="./$MATRIX_DIR/installer/kickstart.ks"
           if [ ! -f "$KICKSTART_FILE" ]; then
             echo "::error::Expected kickstart at $KICKSTART_FILE but it was not found"
             exit 1
@@ -1148,7 +1203,7 @@ jobs:
           mapfile -t ISO_FILES < <(find "$OUTPUT_DIR" -type f -name '*.iso')
 
           if [ ${#ISO_FILES[@]} -eq 0 ]; then
-            echo "::warning::No .iso file found under $OUTPUT_DIR for format ${{ matrix.format }}, skipping kickstart injection"
+            echo "::warning::No .iso file found under $OUTPUT_DIR for format $MATRIX_FORMAT, skipping kickstart injection"
             exit 0
           fi
 
@@ -1207,11 +1262,16 @@ jobs:
 
       - name: Create scratch container image with artifact
         id: artifact_image
+        env:
+          MATRIX_IMAGE_NAME: ${{ matrix.image_name }}
+          MATRIX_FORMAT: ${{ matrix.format }}
+          MATRIX_ARCH: ${{ matrix.arch }}
+          VERSION_OUTPUT: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
 
-          ARTIFACT_IMAGE_NAME="${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_name }}-${{ matrix.format }}"
-          ARTIFACT_IMAGE_TAG="${{ steps.version.outputs.version }}-${{ matrix.arch }}"
+          ARTIFACT_IMAGE_NAME="$DEST_REGISTRY_USER/$IMAGE_PREFIX-$MATRIX_IMAGE_NAME-$MATRIX_FORMAT"
+          ARTIFACT_IMAGE_TAG="$VERSION_OUTPUT-$MATRIX_ARCH"
 
           echo "Creating scratch image: $ARTIFACT_IMAGE_NAME:$ARTIFACT_IMAGE_TAG"
           echo "Using storage root: $STORAGE_ROOT"
@@ -1232,7 +1292,7 @@ jobs:
             exit 1
           fi
 
-          BASE_NAME="${{ matrix.image_name }}-${{ matrix.format }}"
+          BASE_NAME="$MATRIX_IMAGE_NAME-$MATRIX_FORMAT"
           if [ ${#OUT_FILES[@]} -eq 1 ]; then
             SRC="${OUT_FILES[0]}"
             FNAME=$(basename "$SRC")
@@ -1318,6 +1378,10 @@ jobs:
 
       - name: Create and push multi-platform manifests per directory
         shell: bash
+        env:
+          SETUP_PLATFORMS: ${{ needs.setup.outputs.platforms }}
+          SETUP_DIRS: ${{ needs.setup.outputs.dirs }}
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
@@ -1355,9 +1419,9 @@ jobs:
             echo "$(basename "$full_path")"
           }
 
-          IFS=',' read -ra GLOBAL_PLATFORM_ARRAY <<< "${{ needs.setup.outputs.platforms }}"
+          IFS=',' read -ra GLOBAL_PLATFORM_ARRAY <<< "$SETUP_PLATFORMS"
 
-          DIRS_JSON='${{ needs.setup.outputs.dirs }}'
+          DIRS_JSON='$SETUP_DIRS'
           echo "Directories to process: $DIRS_JSON"
 
           DIRS_CLEAN=$(echo "$DIRS_JSON" | sed 's/\[//g; s/\]//g; s/"//g')
@@ -1365,11 +1429,11 @@ jobs:
 
           for DIR in "${DIRS[@]}"; do
             IMAGE_NAME=$(get_image_name "$DIR")
-            IMAGE_BASE="${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-$IMAGE_NAME" 
+            IMAGE_BASE="$DEST_REGISTRY_HOST/$DEST_REGISTRY_USER/$IMAGE_PREFIX-$IMAGE_NAME" 
 
-            echo "\n=== Processing ${{ env.IMAGE_PREFIX }}-$IMAGE_NAME (from $DIR) ==="
+            echo "\n=== Processing $IMAGE_PREFIX-$IMAGE_NAME (from $DIR) ==="
 
-            ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
+            ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "$SETUP_PLATFORMS")
             echo "Directory $DIR platforms: $ALLOWED_PLATFORMS"
 
             KEEP_VERSION=$(get_keep_version "$DIR")
@@ -1432,7 +1496,7 @@ jobs:
               fi
             fi
 
-            for TAG_TYPE in "latest" "${{ github.sha }}" "$VERSION_TAG"; do
+            for TAG_TYPE in "latest" "$SHA" "$VERSION_TAG"; do
               echo "Creating manifest for $IMAGE_BASE:$TAG_TYPE"
 
               MANIFEST_IMAGES=()
@@ -1470,6 +1534,15 @@ jobs:
 
       - name: Print build summary
         shell: bash
+        env:
+          HAS_DIRS: ${{ needs.setup.outputs.has_dirs }}
+          SETUP_PLATFORMS: ${{ needs.setup.outputs.platforms }}
+          SETUP_FORMATS: ${{ needs.setup.outputs.formats }}
+          SETUP_BASE_PATH: ${{ needs.setup.outputs.base_path }}
+          SETUP_DIRS: ${{ needs.setup.outputs.dirs }}
+          HAS_ARTIFACTS: ${{ needs.setup.outputs.has_artifacts }}
+          SETUP_ARTIFACT_MATRIX: ${{ needs.setup.outputs.artifact_matrix }}
+          SHA: ${{ github.sha }}
         run: |
           get_allowed_platforms() {
             local dir="$1"
@@ -1520,7 +1593,7 @@ jobs:
           }
           get_artifact_config() {
             local dir="$1"
-            local default_formats="${{ needs.setup.outputs.formats }}"
+            local default_formats="$SETUP_FORMATS"
 
             local create_artifacts=""
             local artifact_formats=""
@@ -1556,16 +1629,16 @@ jobs:
           }
 
           echo "## Build Summary" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ needs.setup.outputs.has_dirs }}" != "true" ]; then
+          if [ "$HAS_DIRS" != "true" ]; then
             echo "No buildable directory changes detected in this run." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
           echo "### Global Configuration" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Image Prefix**: ${{ env.IMAGE_PREFIX }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Platforms**: ${{ needs.setup.outputs.platforms }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Formats**: ${{ needs.setup.outputs.formats }}" >> "$GITHUB_STEP_SUMMARY"
-          BASE_PATH="${{ needs.setup.outputs.base_path }}"
+          echo "- **Image Prefix**: $IMAGE_PREFIX" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Platforms**: $SETUP_PLATFORMS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Formats**: $SETUP_FORMATS" >> "$GITHUB_STEP_SUMMARY"
+          BASE_PATH="$SETUP_BASE_PATH"
           if [ -n "$BASE_PATH" ]; then
             echo "- **Base Path**: $BASE_PATH" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -1573,19 +1646,19 @@ jobs:
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          DIRS_JSON='${{ needs.setup.outputs.dirs }}'
+          DIRS_JSON='$SETUP_DIRS'
           DIRS_CLEAN=$(echo "$DIRS_JSON" | sed 's/\[//g; s/\]//g; s/"//g')
           IFS=',' read -ra DIRS <<< "$DIRS_CLEAN"
 
           echo "### Bootc Images Built" >> "$GITHUB_STEP_SUMMARY"
           for DIR in "${DIRS[@]}"; do
             IMAGE_NAME=$(get_image_name "$DIR")
-            ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "${{ needs.setup.outputs.platforms }}")
+            ALLOWED_PLATFORMS=$(get_allowed_platforms "$DIR" "$SETUP_PLATFORMS")
             KEEP_VERSION=$(get_keep_version "$DIR")
             BUILD_ARGS=$(get_build_args "$DIR")
             
             EXTRA_INFO=""
-            if [ "$ALLOWED_PLATFORMS" != "${{ needs.setup.outputs.platforms }}" ]; then
+            if [ "$ALLOWED_PLATFORMS" != "$SETUP_PLATFORMS" ]; then
               EXTRA_INFO="platforms: $ALLOWED_PLATFORMS"
             fi
             if [ "$KEEP_VERSION" = "true" ]; then
@@ -1613,18 +1686,18 @@ jobs:
             fi
             
             if [ -n "$EXTRA_INFO" ]; then
-              echo "- **$IMAGE_NAME** (from $DIR, $EXTRA_INFO): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-$IMAGE_NAME:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
+              echo "- **$IMAGE_NAME** (from $DIR, $EXTRA_INFO): \`$DEST_REGISTRY_HOST/$DEST_REGISTRY_USER/$IMAGE_PREFIX-$IMAGE_NAME:{latest | $SHA | vN}\`" >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "- **$IMAGE_NAME** (from $DIR): \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-$IMAGE_NAME:{latest | ${{ github.sha }} | vN}\`" >> "$GITHUB_STEP_SUMMARY"
+              echo "- **$IMAGE_NAME** (from $DIR): \`$DEST_REGISTRY_HOST/$DEST_REGISTRY_USER/$IMAGE_PREFIX-$IMAGE_NAME:{latest | $SHA | vN}\`" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "${{ needs.setup.outputs.has_artifacts }}" = "true" ]; then
+          if [ "$HAS_ARTIFACTS" = "true" ]; then
             echo "### Installable Artifacts Built" >> "$GITHUB_STEP_SUMMARY"
 
-            ARTIFACT_MATRIX_JSON='${{ needs.setup.outputs.artifact_matrix }}'
+            ARTIFACT_MATRIX_JSON='$SETUP_ARTIFACT_MATRIX'
 
             for DIR in "${DIRS[@]}"; do
               IMAGE_NAME=$(get_image_name "$DIR")
@@ -1639,7 +1712,7 @@ jobs:
 
                 IFS=',' read -ra FORMAT_ARRAY <<< "$DIR_FORMATS"
                 for FORMAT in "${FORMAT_ARRAY[@]}"; do
-                  echo "  - **Image**: \`${{ env.DEST_REGISTRY_HOST }}/${{ env.DEST_REGISTRY_USER }}/${{ env.IMAGE_PREFIX }}-$IMAGE_NAME-$FORMAT:{latest | vN}\`" >> "$GITHUB_STEP_SUMMARY"
+                  echo "  - **Image**: \`$DEST_REGISTRY_HOST/$DEST_REGISTRY_USER/$IMAGE_PREFIX-$IMAGE_NAME-$FORMAT:{latest | vN}\`" >> "$GITHUB_STEP_SUMMARY"
                 done
               fi
             done
