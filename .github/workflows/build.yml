@@ -14,7 +14,7 @@ on:
       installer_base:
         description: 'Default installer_base for bootc-generic-iso/bootc-installer when a directory has no .buildconfig (name of an image under _base_anaconda_images_/<name>/)'
         required: false
-        default: 'anaconda-base'
+        default: 'anaconda-rhel10-base'
       base_path:
         description: 'Base path for image directories (e.g., "devices" or leave empty for root)'
         required: false
@@ -95,7 +95,7 @@ jobs:
             FORMATS="bootc-generic-iso"
             BASE_PATH="${{ vars.BASE_PATH || '' }}"
             IMAGE_PREFIX="${{ vars.IMAGE_PREFIX || 'bootc' }}"
-            DEFAULT_INSTALLER_BASE="${{ vars.INSTALLER_BASE || 'anaconda-base' }}"
+            DEFAULT_INSTALLER_BASE="${{ vars.INSTALLER_BASE || 'anaconda-rhel10-base' }}"
           fi
 
           ORIGINAL_FORMATS="$FORMATS"
@@ -234,7 +234,7 @@ jobs:
           # ISO-style bootc formats (bootc-installer, bootc-generic-iso) need a
           # separate Anaconda installer image. The value here is the name of
           # another top-level directory that builds that shared base image
-          # (Anaconda + tooling, no kickstart, e.g. "anaconda-base").
+          # (Anaconda + tooling, no kickstart, e.g. "anaconda-rhel10-base").
           # This directory's own ./installer/Containerfile is built locally on
           # top of that base (see the build-artifacts job) to add its
           # kickstart and iso.yaml. The local result is used as --bootc-ref,
@@ -250,6 +250,25 @@ jobs:
             fi
 
             echo ""
+          }
+
+          # Function to check whether kickstart injection with mkksiso should
+          # run for a directory (default: true). Only applies to ISO-style
+          # formats (bootc-generic-iso, bootc-installer); it is ignored for
+          # other formats since they have no installer_base/ISO to inject into.
+          get_inject_kickstart() {
+            local dir="$1"
+
+            if [ -f "$dir/.buildconfig" ]; then
+              local inject_kickstart=$(grep -E '^inject_kickstart\s*[:=]\s*' "$dir/.buildconfig" | sed -E 's/^inject_kickstart\s*[:=]\s*//' | tr -d '"'"'" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+              if [ "$inject_kickstart" = "false" ]; then
+                echo "false"
+                return
+              fi
+            fi
+
+            # Default to true
+            echo "true"
           }
 
           # Function to check if artifacts exist for an image
@@ -324,7 +343,7 @@ jobs:
 
           # _base_anaconda_images_ is a container directory, not an app: the
           # shared Anaconda installer base images it holds live one level
-          # deeper (e.g. _base_anaconda_images_/anaconda-base/), so it
+          # deeper (e.g. _base_anaconda_images_/anaconda-rhel10-base/), so it
           # needs its own two-levels-deep scan alongside the normal
           # one-level app detection above.
           ANACONDA_BASE_DIR="${BASE_PATH:+$BASE_PATH/}_base_anaconda_images_"
@@ -524,6 +543,9 @@ jobs:
               INSTALLER_BASE=$(get_installer_base "$DIR")
               echo "Directory $DIR installer base: ${INSTALLER_BASE:-<none, falls back to default '$DEFAULT_INSTALLER_BASE' for ISO formats>}"
 
+              INJECT_KICKSTART=$(get_inject_kickstart "$DIR")
+              echo "Directory $DIR inject_kickstart: $INJECT_KICKSTART"
+
               # Determine if we should create artifacts
               SHOULD_CREATE=false
               if [ "$CREATE_ARTIFACTS" = "true" ]; then
@@ -576,7 +598,7 @@ jobs:
                     if [ "$ARTIFACT_FORMAT" = "bootc-installer" ] || [ "$ARTIFACT_FORMAT" = "bootc-generic-iso" ]; then
                       ENTRY_INSTALLER_BASE="${INSTALLER_BASE:-$DEFAULT_INSTALLER_BASE}"
                       if [ -z "$ENTRY_INSTALLER_BASE" ]; then
-                        echo "::error::Directory $DIR requests artifact format '$ARTIFACT_FORMAT' but has no 'installer_base:' key in its .buildconfig, and no default installer_base is configured (workflow_dispatch input, or vars.INSTALLER_BASE). Set one to the name of an image built under _base_anaconda_images_/<name>/ (see _base_anaconda_images_/anaconda-base/ for an example)."
+                        echo "::error::Directory $DIR requests artifact format '$ARTIFACT_FORMAT' but has no 'installer_base:' key in its .buildconfig, and no default installer_base is configured (workflow_dispatch input, or vars.INSTALLER_BASE). Set one to the name of an image built under _base_anaconda_images_/<name>/ (see _base_anaconda_images_/anaconda-rhel10-base/ for an example)."
                         exit 1
                       fi
                       if [ ! -f "$DIR/installer/Containerfile" ]; then
@@ -587,7 +609,7 @@ jobs:
 
                     if [ $artifact_first -eq 0 ]; then ARTIFACT_MATRIX+=","; fi
                     artifact_first=0
-                    ARTIFACT_MATRIX+="{\"platform\":\"$ARTIFACT_PLATFORM\",\"arch\":\"$ARTIFACT_ARCH\",\"runner\":\"$ARTIFACT_RUNNER\",\"dir\":\"$DIR\",\"image_name\":\"$IMAGE_NAME\",\"format\":\"$ARTIFACT_FORMAT\",\"keep_version\":\"$KEEP_VERSION\",\"installer_base\":\"$ENTRY_INSTALLER_BASE\"}"
+                    ARTIFACT_MATRIX+="{\"platform\":\"$ARTIFACT_PLATFORM\",\"arch\":\"$ARTIFACT_ARCH\",\"runner\":\"$ARTIFACT_RUNNER\",\"dir\":\"$DIR\",\"image_name\":\"$IMAGE_NAME\",\"format\":\"$ARTIFACT_FORMAT\",\"keep_version\":\"$KEEP_VERSION\",\"installer_base\":\"$ENTRY_INSTALLER_BASE\",\"inject_kickstart\":\"$INJECT_KICKSTART\"}"
                   done
                 done
               fi
@@ -1107,6 +1129,38 @@ jobs:
           fi
           podman rmi ghcr.io/osbuild/image-builder:latest || true
 
+      - name: Inject kickstart into ISO artifacts with mkksiso
+        if: matrix.installer_base != '' && matrix.inject_kickstart == 'true'
+        run: |
+          set -euo pipefail
+
+          KICKSTART_FILE="./${{ matrix.dir }}/installer/kickstart.ks"
+          if [ ! -f "$KICKSTART_FILE" ]; then
+            echo "::error::Expected kickstart at $KICKSTART_FILE but it was not found"
+            exit 1
+          fi
+
+          echo "Installing mkksiso (lorax) and dependencies"
+          dnf -y install lorax xorriso isomd5sum
+          dnf clean all
+
+          echo "Looking for ISO files under $OUTPUT_DIR"
+          mapfile -t ISO_FILES < <(find "$OUTPUT_DIR" -type f -name '*.iso')
+
+          if [ ${#ISO_FILES[@]} -eq 0 ]; then
+            echo "::warning::No .iso file found under $OUTPUT_DIR for format ${{ matrix.format }}, skipping kickstart injection"
+            exit 0
+          fi
+
+          for ISO in "${ISO_FILES[@]}"; do
+            echo "Injecting $KICKSTART_FILE into $ISO"
+            TMP_ISO="${ISO%.iso}.ks.iso"
+            mkksiso --ks "$KICKSTART_FILE" "$ISO" "$TMP_ISO"
+            mv -f "$TMP_ISO" "$ISO"
+          done
+
+          echo "Kickstart injection complete"
+
       - name: Check available disk space
         run: |
           echo "=== Disk space after build ==="
@@ -1610,5 +1664,6 @@ jobs:
           echo "- \`artifacts: true|false|auto\` - Enable/disable artifact creation (default: auto - create if none exist)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`artifact_formats: bootc-generic-iso,bootc-installer,qcow2,vmdk,raw,ami,vhd,gce\` - Specify artifact formats" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`installer_base: <name>\` - Names an image built under \`_base_anaconda_images_/<name>/\`, used for \`bootc-generic-iso\`/\`bootc-installer\` formats. Optional: falls back to the repo-wide default (vars.INSTALLER_BASE, or the workflow_dispatch input) when a directory has no .buildconfig or no installer_base key. Every directory using these formats still needs its own \`installer/Containerfile\` layering its kickstart and iso.yaml on top of that base" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`inject_kickstart: true|false\` - Inject installer/kickstart.ks into ISO artifacts (bootc-generic-iso, bootc-installer) with mkksiso before pushing (default: true)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`keep_version: true|false\` - Keep existing version instead of incrementing (default: false)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`build_args: KEY=VALUE\` - Pass build arguments to Buildah (repeat the line for multiple args)" >> "$GITHUB_STEP_SUMMARY"
