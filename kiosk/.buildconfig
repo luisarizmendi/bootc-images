@@ -19,7 +19,7 @@ artifact_formats: bootc-generic-iso
 # --bootc-ref. This app's own image is passed as
 # --bootc-installer-payload-ref. Edit ./installer/kickstart.ks and
 # ./installer/iso.yaml to customize this app's install, not the workflow.
-installer_base: anaconda-rhel10-base
+installer_base: anaconda-base
 
 ##### VERSION MANAGEMENT
 # Valid values: true, false
