@@ -11,7 +11,7 @@
 ## FROM this image. Rebuild this only when Anaconda/tooling itself needs to
 ## change; app teams should not need to touch it.
 ##
-## Kept as a separate image from anaconda-base on purpose: Anaconda
+## Kept as a separate image from anaconda-rhel10-base on purpose: Anaconda
 ## and dracut versions aren't guaranteed compatible across RHEL majors, so
 ## don't try to reuse one installer environment for both.
 
