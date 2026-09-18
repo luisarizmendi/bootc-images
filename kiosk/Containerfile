@@ -54,6 +54,3 @@ RUN chmod +x /var/home/kiosk/.local/bin/gnome-kiosk-script && \
 RUN systemctl set-default graphical.target && \
     systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
 
-
-
-    
