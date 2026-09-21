@@ -18,9 +18,18 @@ RUN set -eu; \
     default-fonts-core-sans \
     default-fonts-other-sans \
     google-noto-sans-cjk-fonts \
+    fuse-overlayfs \
     $DEVNAME_PKGS \
     $GRUB_PKGS
-    
+
+RUN mkdir -p /etc/containers && cat > /etc/containers/storage.conf <<'EOF'
+[storage]
+  driver = "overlay"
+  runroot = "/run/containers/storage"
+  graphroot = "/var/lib/containers/storage"
+  mount_program = "fuse-overlayfs-snapshot"
+EOF
+
 # these are necessary build tools. if you use a separate build container then
 # these tools should be installed there
 RUN dnf install -qy \
