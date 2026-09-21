@@ -45,23 +45,12 @@ RUN set -eu; \
         audit \
         xorriso \
         squashfs-tools \
-        fuse-overlayfs \
-        fuse-overlayfs-snapshot \
         lorax-templates-rhel \
         python3-mako \
         $DEVNAME_PKGS \
         $GRUB_PKGS && \
     dnf reinstall -y grub2-common $GRUB_PKGS && \
     dnf clean all
-
-RUN mkdir -p /etc/containers && cat > /etc/containers/storage.conf <<'EOF'
-[storage]
-  driver = "overlay"
-  runroot = "/run/containers/storage"
-  graphroot = "/var/lib/containers/storage"
-  mount_program = "fuse-overlayfs-snapshot"
-EOF
-
 
 # Verify the reinstall above actually produced the required files. If
 # this still fails, some other package is also pre-baked-but-stripped in
