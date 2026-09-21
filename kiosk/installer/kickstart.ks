@@ -15,3 +15,5 @@ user --name=admin --password="$6$/7rTITXmb1xpkB52$1L6xl53aTMayMIqhdxh6VxLGguy2CU
 rootpw --lock
 
 bootc --source-imgref=registry:ghcr.io/luisarizmendi/bootc-kiosk:latest --target-imgref=ghcr.io/luisarizmendi/bootc-kiosk:latest
+
+reboot
