@@ -9,7 +9,7 @@ platforms: linux/amd64,linux/arm64
 artifacts: true
 
 # Valid values: bootc-generic-iso, bootc-installer, qcow2, vmdk, raw, ami, vhd, gce
-artifact_formats: bootc-generic-iso, bootc-installer, qcow2, raw
+artifact_formats: bootc-generic-iso, qcow2, raw
 
 ##### INSTALLER (optional: falls back to a repo-wide default, see vars.INSTALLER_BASE / workflow_dispatch input, when a directory has no .buildconfig or no installer_base key)
 # Name of the image built under _base_anaconda_images_/<name>/ (Anaconda +
