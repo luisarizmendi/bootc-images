@@ -1421,7 +1421,7 @@ jobs:
 
           IFS=',' read -ra GLOBAL_PLATFORM_ARRAY <<< "$SETUP_PLATFORMS"
 
-          DIRS_JSON='$SETUP_DIRS'
+          DIRS_JSON="$SETUP_DIRS"
           echo "Directories to process: $DIRS_JSON"
 
           DIRS_CLEAN=$(echo "$DIRS_JSON" | sed 's/\[//g; s/\]//g; s/"//g')
@@ -1646,7 +1646,7 @@ jobs:
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          DIRS_JSON='$SETUP_DIRS'
+          DIRS_JSON="$SETUP_DIRS"
           DIRS_CLEAN=$(echo "$DIRS_JSON" | sed 's/\[//g; s/\]//g; s/"//g')
           IFS=',' read -ra DIRS <<< "$DIRS_CLEAN"
 
@@ -1697,7 +1697,7 @@ jobs:
           if [ "$HAS_ARTIFACTS" = "true" ]; then
             echo "### Installable Artifacts Built" >> "$GITHUB_STEP_SUMMARY"
 
-            ARTIFACT_MATRIX_JSON='$SETUP_ARTIFACT_MATRIX'
+            ARTIFACT_MATRIX_JSON="$SETUP_ARTIFACT_MATRIX"
 
             for DIR in "${DIRS[@]}"; do
               IMAGE_NAME=$(get_image_name "$DIR")
