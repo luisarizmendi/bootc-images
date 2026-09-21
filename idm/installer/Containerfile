@@ -1,7 +1,7 @@
 ## Per-app installer for the "rhel" bootc image.
 ##
 ## Everything heavy (Anaconda, dracut, EFI plumbing) lives in the shared
-## ../../anaconda-base image, built once and reused by every app.
+## ../../anaconda-rhel10-base image, built once and reused by every app.
 ## This layer only adds the two files that differ per app: the kickstart
 ## and the ISO/grub config. Edit those two files here, not the GitHub
 ## Actions workflow. This image is built locally at artifact-build time
@@ -12,4 +12,4 @@ ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
 COPY iso.yaml /usr/lib/image-builder/bootc/iso.yaml
-COPY kickstart.ks /usr/share/anaconda/interactive-defaults.ks
+COPY interactive-defaults.ks /usr/share/anaconda/interactive-defaults.ks

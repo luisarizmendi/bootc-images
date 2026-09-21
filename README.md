@@ -64,7 +64,7 @@ Choose one authentication method:
 **Repository Variables:**
 - `DEST_REGISTRY_HOST`: Destination registry (default: `ghcr.io`)
 - `DEST_REGISTRY_USER`: Registry username (default: repository owner)
-- `INSTALLER_BASE`: Repo-wide default `installer_base` (see [Installer Base Images](#installer-base-images-for-iso-formats)) used when a directory has no `.buildconfig` or no `installer_base` key (default: `anaconda-base`)
+- `INSTALLER_BASE`: Repo-wide default `installer_base` (see [Installer Base Images](#installer-base-images-for-iso-formats)) used when a directory has no `.buildconfig` or no `installer_base` key (default: `anaconda-rhel10-base`)
 
 **Repository Secrets:**
 - `DEST_REGISTRY_PASSWORD`: Registry password (default: GitHub token)
@@ -171,7 +171,7 @@ If you need different credentials for pulling from registry.redhat.io:
 2. Under **Variables**, add any of these that you want to override:
    - `BASE_PATH`: Path where the image definitions are located in the repo (defaults to "/")
    - `IMAGE_PREFIX`: Prefix that will be included in the container image names (defaults to "bootc")
-   - `INSTALLER_BASE`: Default `installer_base` for ISO formats (defaults to "anaconda-base")
+   - `INSTALLER_BASE`: Default `installer_base` for ISO formats (defaults to "anaconda-rhel10-base")
 
 ---
 
@@ -261,7 +261,7 @@ artifact_formats: bootc-generic-iso,bootc-installer,qcow2,vmdk
 # Required for bootc-generic-iso / bootc-installer formats (see Installer
 # Base Images below). Falls back to the repo-wide default (vars.INSTALLER_BASE
 # or the workflow_dispatch input) if omitted.
-installer_base: anaconda-base
+installer_base: anaconda-rhel10-base
 
 # Reuse the same version tag instead of incrementing (default: false)
 keep_version: false
@@ -323,10 +323,10 @@ Supported formats: `bootc-generic-iso`, `bootc-installer`, `qcow2`, `vmdk`, `raw
 Required when `artifact_formats` includes `bootc-generic-iso` and/or `bootc-installer`. Names an image built under `_base_anaconda_images_/<name>/` (a shared Anaconda installer environment, no kickstart). The workflow pulls that base image, then builds this directory's own `installer/Containerfile` on top of it to produce a local, per-app installer image used as `--bootc-ref` by `image-builder`.
 
 ```ini
-installer_base: anaconda-base
+installer_base: anaconda-rhel10-base
 ```
 
-If omitted, the repo-wide default is used (`vars.INSTALLER_BASE`, or the `workflow_dispatch` `installer_base` input — both default to `anaconda-base`). See [Installer Base Images](#installer-base-images-for-iso-formats) for the full setup.
+If omitted, the repo-wide default is used (`vars.INSTALLER_BASE`, or the `workflow_dispatch` `installer_base` input — both default to `anaconda-rhel10-base`). See [Installer Base Images](#installer-base-images-for-iso-formats) for the full setup.
 
 ---
 
@@ -373,9 +373,9 @@ RUN echo "Building version ${APP_VERSION}"
 
 ### Installer Base Images (for ISO formats)
 
-`bootc-generic-iso` and `bootc-installer` both build an Anaconda-based installer ISO, and both need a paired **installer base image** plus a per-app **`installer/`** directory:
+`bootc-generic-iso` and `bootc-installer` both build an anaconda-rhel10-based installer ISO, and both need a paired **installer base image** plus a per-app **`installer/`** directory:
 
-1. **Shared base** — an image under `_base_anaconda_images_/<name>/` (e.g. `anaconda-base`) containing Anaconda and the tooling needed to boot as an installer. It has no kickstart or per-app config, is built like any other image directory (with its own `.buildconfig`, normally `artifacts: false`), and is never deployed to a real device — it only ever serves as the `--bootc-ref` installer environment. Rebuild it only when Anaconda/tooling itself needs to change.
+1. **Shared base** — an image under `_base_anaconda_images_/<name>/` (e.g. `anaconda-rhel10-base`) containing Anaconda and the tooling needed to boot as an installer. It has no kickstart or per-app config, is built like any other image directory (with its own `.buildconfig`, normally `artifacts: false`), and is never deployed to a real device — it only ever serves as the `--bootc-ref` installer environment. Rebuild it only when Anaconda/tooling itself needs to change.
 
 2. **Per-app `installer/` directory** — inside *your* image directory (e.g. `rhel/installer/`), containing:
    - `Containerfile` — a thin layer `FROM ${BASE_IMAGE}` (the shared base, injected via build-arg) that copies in the two files below
@@ -388,10 +388,10 @@ Wire it up in your `.buildconfig`:
 
 ```ini
 artifact_formats: bootc-generic-iso
-installer_base: anaconda-base
+installer_base: anaconda-rhel10-base
 ```
 
-See `rhel/` and `_base_anaconda_images_/anaconda-base/` in this repo for a working example.
+See `rhel/` and `_base_anaconda_images_/anaconda-rhel10-base/` in this repo for a working example.
 
 > ⚠️ As noted above, only `bootc-installer` embeds the bootc payload in the ISO. `bootc-generic-iso` relies on the kickstart's `--source-imgref` to pull the image from the registry during install — make sure that reference and the install-time network are correct.
 
@@ -515,7 +515,7 @@ You can manually trigger builds with custom parameters:
 3. Configure:
    - **Platforms**: `linux/amd64,linux/arm64` (or subset)
    - **Formats**: `bootc-generic-iso,bootc-installer,qcow2,vmdk` (or subset)
-   - **Installer base**: name of an image under `_base_anaconda_images_/<name>/`, used as the default for directories with no `installer_base` in their `.buildconfig` (default: `anaconda-base`)
+   - **Installer base**: name of an image under `_base_anaconda_images_/<name>/`, used as the default for directories with no `installer_base` in their `.buildconfig` (default: `anaconda-rhel10-base`)
 
 ## Important Notes About GitHub Runner Limitations
 

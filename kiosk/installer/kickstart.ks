@@ -1,8 +1,9 @@
-#text --non-interactive
-text
+text --non-interactive
 
 lang en_US.UTF-8
 keyboard us
+
+xconfig --startxonboot
 
 zerombr
 clearpart --all --initlabel --disklabel=gpt

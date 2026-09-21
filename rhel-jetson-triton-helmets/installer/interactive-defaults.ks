@@ -1,0 +1,1 @@
+bootc --source-imgref=registry:ghcr.io/luisarizmendi/bootc-rhel-jetson-triton-helmets:latest --target-imgref=ghcr.io/luisarizmendi/bootc-rhel-jetson-triton-helmets:latest
