@@ -6,5 +6,5 @@ id='${ID}'
 version-id='${VERSION_ID}'
 
 [User]
-Session=gnome-kiosk-script
+Session=gnome-kiosk-script-wayland
 Icon=${HOME}/.face
