@@ -1,6 +1,6 @@
 [Unit]
 Description=PoS service
-After=network.target
+After=network.target copy-embedded-images.service
 Requires=copy-embedded-images.service
 
 [Container]
