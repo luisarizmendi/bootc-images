@@ -8,7 +8,7 @@ This workflow uses a **subscribed UBI container** approach, which eliminates the
 
 Store your images in designated folders within the repository's root directory. The workflow will automatically rebuild images whenever changes are detected in those folders.
 
-
+> **Note:** if only blacklisted files change in a directory (currently `.buildconfig` and `README.md`, matched case-insensitively), the build for that directory is skipped — this lets you tweak configuration comments or docs without triggering a rebuild. Any other file change (including the Containerfile itself) triggers a normal build.
 
 ---
 
@@ -16,7 +16,7 @@ Store your images in designated folders within the repository's root directory. 
 
 1. **Setup**
    - Reads input parameters or defaults
-   - Detects changed directories with Containerfiles
+   - Detects changed directories with Containerfiles (skipping directories where only blacklisted files — `.buildconfig`, `README.md` — changed)
    - Generates build matrices for images and artifacts
    - Checks existing artifacts to avoid redundant builds
 
@@ -32,7 +32,7 @@ Store your images in designated folders within the repository's root directory. 
 3. **Build Artifacts** (Optional)
    - Uses **`image-builder`** (`ghcr.io/osbuild/image-builder`) to create installable artifacts — this replaces the now-deprecated `bootc-image-builder`
    - Supports custom artifact configuration via optional `config.toml` files, passed explicitly as a `--blueprint`
-   - ISO-style formats (`bootc-generic-iso`, `bootc-installer`) additionally build a per-app Anaconda installer image on top of a shared base (see [Installer Base Images](#installer-base-images-for-iso-formats) below)
+   - ISO-style formats (`bootc-generic-iso`, `bootc-installer`) additionally build a per-app Anaconda installer image on top of a shared base (see [Installer Base Images](#installer-base-images-for-iso-formats) below), and optionally inject a kickstart into the resulting ISO with `mkksiso` (see [`inject_kickstart`](#inject_kickstart))
    - Packages artifacts into container images for easy distribution
    - Supports multiple formats and platforms simultaneously
 
@@ -263,6 +263,10 @@ artifact_formats: bootc-generic-iso,bootc-installer,qcow2,vmdk
 # or the workflow_dispatch input) if omitted.
 installer_base: anaconda-rhel10-base
 
+# Inject installer/kickstart.ks into ISO artifacts (bootc-generic-iso,
+# bootc-installer) with mkksiso before pushing (default: true)
+inject_kickstart: true
+
 # Reuse the same version tag instead of incrementing (default: false)
 keep_version: false
 
@@ -330,6 +334,20 @@ If omitted, the repo-wide default is used (`vars.INSTALLER_BASE`, or the `workfl
 
 ---
 
+#### `inject_kickstart`
+
+Only relevant for ISO-style formats (`bootc-generic-iso`, `bootc-installer`), and ignored for other formats since they have no ISO to inject into.
+
+When `true` (the default), after `image-builder` produces the ISO the workflow installs `lorax` (for `mkksiso`) and re-injects `installer/kickstart.ks` from your image directory directly into the ISO, replacing the copy `image-builder` already baked in via the installer image. Set it to `false` to skip this step and ship the ISO exactly as `image-builder` produced it.
+
+```ini
+inject_kickstart: false
+```
+
+> If no `.iso` file is found in the build output for the format being built, this step is skipped with a warning rather than failing the build.
+
+---
+
 #### `keep_version`
 
 By default, each build increments the version tag (`v1` → `v2` → `v3`...).
@@ -371,32 +389,6 @@ RUN echo "Building version ${APP_VERSION}"
 
 ---
 
-### Installer Base Images (for ISO formats)
-
-`bootc-generic-iso` and `bootc-installer` both build an anaconda-rhel10-based installer ISO, and both need a paired **installer base image** plus a per-app **`installer/`** directory:
-
-1. **Shared base** — an image under `_base_anaconda_images_/<name>/` (e.g. `anaconda-rhel10-base`) containing Anaconda and the tooling needed to boot as an installer. It has no kickstart or per-app config, is built like any other image directory (with its own `.buildconfig`, normally `artifacts: false`), and is never deployed to a real device — it only ever serves as the `--bootc-ref` installer environment. Rebuild it only when Anaconda/tooling itself needs to change.
-
-2. **Per-app `installer/` directory** — inside *your* image directory (e.g. `rhel/installer/`), containing:
-   - `Containerfile` — a thin layer `FROM ${BASE_IMAGE}` (the shared base, injected via build-arg) that copies in the two files below
-   - `kickstart.ks` — the app's Anaconda kickstart, including the `bootc --source-imgref ... --target-imgref ...` line that tells the installed system which bootc image to track
-   - `iso.yaml` — ISO/grub label and boot entries, copied to `/usr/lib/image-builder/bootc/iso.yaml`
-
-   This installer image is built locally at artifact-build time (never pushed to a registry) and is what `image-builder` uses as `--bootc-ref`.
-
-Wire it up in your `.buildconfig`:
-
-```ini
-artifact_formats: bootc-generic-iso
-installer_base: anaconda-rhel10-base
-```
-
-See `rhel/` and `_base_anaconda_images_/anaconda-rhel10-base/` in this repo for a working example.
-
-> ⚠️ As noted above, only `bootc-installer` embeds the bootc payload in the ISO. `bootc-generic-iso` relies on the kickstart's `--source-imgref` to pull the image from the registry during install — make sure that reference and the install-time network are correct.
-
----
-
 ### Build-time Secrets
 
 Secrets allow sensitive values (tokens, passwords, credentials) to be available during
@@ -411,13 +403,31 @@ secret simply ignore it.
 Each secret is:
 1. Read from a GitHub Actions repository secret
 2. Written to a temporary file during the build
-3. Mounted into the build environment via `--secret id=<n>,src=<file>`
+3. Mounted into the build environment via `--secret id=<name>,src=<file>`
 4. Deleted immediately after the build step completes
 5. **Never written into any image layer**
 
 The secret value is redacted in build logs (shown as `***`). The file you copy *into*
 the image (e.g. `/etc/mysecrets/token`) will be present in the final image — only the
 build-time mount mechanism itself is ephemeral.
+
+#### Currently configured secrets
+
+The workflow already declares (and mounts, when non-empty) the following secrets out of
+the box. You only need to create the matching **GitHub repository secret** with the same
+name — no workflow edits required to use any of these:
+
+| Secret ID (as used in Containerfile) | GitHub repository secret |
+|---|---|
+| `GITLAB_TOKEN` | `GITLAB_TOKEN` |
+| `REGISTRY_TOKEN` | `REGISTRY_TOKEN` |
+| `PULL_SECRET` | `PULL_SECRET` |
+| `WIFI_SSID` | `WIFI_SSID` |
+| `WIFI_PASSWORD` | `WIFI_PASSWORD` |
+
+If you only need one of the above, skip straight to step 1 below (create the GitHub
+secret) and use it in your Containerfile (step 3) — steps for editing the workflow are
+only needed when you want to add a **new** secret name that isn't in this list.
 
 #### Adding a new secret
 
@@ -426,7 +436,7 @@ To wire up a new secret, three things need to be in place:
 **1. Create the secret in GitHub**
 
 Go to **Repository Settings** → **Secrets and variables** → **Actions** and add a new
-repository secret, e.g. `GITLAB_TOKEN`.
+repository secret, e.g. `MY_OTHER_SECRET`.
 
 **2. Add it to the workflow `env:` block and mount script**
 
@@ -436,15 +446,19 @@ step and add two blocks — one in `env:` and one in the secret mount section:
 ```yaml
 env:
   SECRET_GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
-  # Add one line per secret:
-  # SECRET_MY_OTHER_SECRET: ${{ secrets.MY_OTHER_SECRET }}
+  SECRET_REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+  SECRET_PULL_SECRET: ${{ secrets.PULL_SECRET }}
+  SECRET_WIFI_SSID: ${{ secrets.WIFI_SSID }}
+  SECRET_WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+  # Add one line per new secret:
+  SECRET_MY_OTHER_SECRET: ${{ secrets.MY_OTHER_SECRET }}
 ```
 
 ```bash
-if [ -n "${SECRET_GITLAB_TOKEN:-}" ]; then
-  printf '%s' "$SECRET_GITLAB_TOKEN" > "$SECRET_TMPDIR/GITLAB_TOKEN"
-  SECRET_FLAGS+=(--secret "id=GITLAB_TOKEN,src=$SECRET_TMPDIR/GITLAB_TOKEN")
-  echo "  Mounting secret: GITLAB_TOKEN"
+if [ -n "${SECRET_MY_OTHER_SECRET:-}" ]; then
+  printf '%s' "$SECRET_MY_OTHER_SECRET" > "$SECRET_TMPDIR/MY_OTHER_SECRET"
+  SECRET_FLAGS+=(--secret "id=MY_OTHER_SECRET,src=$SECRET_TMPDIR/MY_OTHER_SECRET")
+  echo "  Mounting secret: MY_OTHER_SECRET"
 fi
 # Copy this block for each additional secret
 ```
@@ -465,6 +479,10 @@ RUN --mount=type=secret,id=GITLAB_TOKEN \
 
 > **Important:** `/run/secrets/<id>` is a **file**, not a directory.
 > Do not add a trailing slash: `cat /run/secrets/GITLAB_TOKEN` ✅  `ls /run/secrets/GITLAB_TOKEN/` ❌
+>
+> **Note:** secrets declared this way are only mounted in the `build-image` job
+> (the `buildah build` step). They are not available to `build-artifacts` /
+> `image-builder`.
 
 ---
 

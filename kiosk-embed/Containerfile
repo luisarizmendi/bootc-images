@@ -64,7 +64,10 @@ ENV IMAGE_LIST_FILE=${IMAGE_STORAGE_DIR}/image-list.txt
 ENV IMAGES="quay.io/luisarizmendi/tailwind-pos:latest"
 
 
-#RUN --mount=type=secret,id=PULL_SECRET,dst=/run/secrets/pull-secret.json \
+###############################
+### Registry with Auth token
+################################
+#RUN --mount=type=secret,id=REGISTRY_TOKEN,dst=/run/secrets/pull-secret.json \
 #    images="${IMAGES}" ; \
 #    mkdir -p "${IMAGE_STORAGE_DIR}" ; \
 #    for img in ${images} ; do \
@@ -75,6 +78,9 @@ ENV IMAGES="quay.io/luisarizmendi/tailwind-pos:latest"
 #        echo "${img},${sha}" >> "${IMAGE_LIST_FILE}" ; \
 #    done
 
+###############################
+### Registry with no Auth token
+################################
 RUN images="${IMAGES}" ; \
     mkdir -p "${IMAGE_STORAGE_DIR}" ; \
     for img in ${images} ; do \

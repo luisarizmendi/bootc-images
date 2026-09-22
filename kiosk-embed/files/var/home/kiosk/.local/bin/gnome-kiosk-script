@@ -1,8 +1,8 @@
 #!/bin/sh
 set -Eeuo pipefail
 export MOZ_ENABLE_WAYLAND=1
-while ! curl -sf --connect-timeout 5 --expect100-timeout 5 https://localhost:8080; do
+while ! curl -sf --connect-timeout 5 --expect100-timeout 5 http://localhost:8080; do
     echo "Waiting for the Kiosk APP to become available..."
     sleep 10
 done
-exec /usr/bin/firefox --kiosk https://localhost:8080
+exec /usr/bin/firefox --kiosk http://localhost:8080
