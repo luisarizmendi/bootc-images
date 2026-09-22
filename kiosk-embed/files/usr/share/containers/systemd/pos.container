@@ -1,6 +1,7 @@
 [Unit]
 Description=PoS service
 After=network.target
+Requires=copy-embedded-images.service
 
 [Container]
 Image=quay.io/luisarizmendi/tailwind-pos:latest

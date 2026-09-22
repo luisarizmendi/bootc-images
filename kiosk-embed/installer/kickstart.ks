@@ -1,4 +1,4 @@
-text --non-interactive
+text
 
 lang en_US.UTF-8
 keyboard us

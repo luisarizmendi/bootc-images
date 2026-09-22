@@ -334,6 +334,17 @@ If omitted, the repo-wide default is used (`vars.INSTALLER_BASE`, or the `workfl
 
 ---
 
+> **Note: embedding the payload in `bootc-generic-iso`**
+>
+> You can still get a fully offline-capable `bootc-generic-iso` by passing `--bootc-installer-payload-ref <image>` directly to `image-builder` (this repo's workflow does not do this automatically for `bootc-generic-iso`, see the overlay-over-overlayfs issue above). When you do, the referenced image is copied into `/var/lib/containers/storage` inside the ISO's squashfs, so it is available locally at install time.
+>
+> Two things to get right when using this:
+>
+> - **`kickstart.ks` must point at the local copy.** `--source-imgref` has to use the `containers-storage:` transport with the *exact same reference, tag included*, that you passed to `--bootc-installer-payload-ref`, e.g. `--source-imgref=containers-storage:ghcr.io/owner/myimage:latest-amd64`. If you leave it as `--source-imgref=registry:...`, `bootc install` ignores the embedded copy and always pulls over the network. This is easy to miss: with network access at install time it just works, silently ignoring the embedded payload, but on an isolated network the install can finish and reboot without ever deploying the OS. The disk ends up with no bootloader, and the machine hangs at "Booting from Hard Disk..." (or shows "No bootable option or device was found" in UEFI) after reboot.
+> - **Give the install VM enough RAM, not disk.** Importing the embedded payload into ostree needs scratch space under `/var/tmp` in the live installer environment, which lives in the installer's RAM/tmpfs, not on the target disk. If the VM does not have enough memory you will see `bootc install ...: no space left on device` while writing to `/var/tmp/container_images_...` in the bootc log, even though the target disk has plenty of free space. Size the install VM's RAM comfortably above the embedded image size.
+
+---
+
 #### `inject_kickstart`
 
 Only relevant for ISO-style formats (`bootc-generic-iso`, `bootc-installer`), and ignored for other formats since they have no ISO to inject into.
