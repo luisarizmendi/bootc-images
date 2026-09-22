@@ -100,6 +100,7 @@ while IFS="," read -r img sha ; do
         "dir:${IMAGE_STORAGE_DIR}/\${sha}" \
         "containers-storage:\${img}"
 done < "${IMAGE_LIST_FILE}"
+reboot
 EOF
 
 RUN chmod 755 /usr/bin/microshift-copy-images && \
