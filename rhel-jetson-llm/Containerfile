@@ -13,9 +13,12 @@ ARG MODEL_FILE=Qwen_Qwen3.5-4B-Q4_K_M.gguf
 
 # NOTE: CUDA package names depend on the JetPack repo shipped in the base image.
 # Check with: dnf search cuda-toolkit cuda-nvcc
+
+RUN dnf search cuda-toolkit cuda-nvcc
+
 RUN dnf -y install \
     gcc gcc-c++ make cmake git python3-pip libcurl-devel \
-#      cuda-toolkit \
+    cuda-toolkit \
     && dnf clean all
 
 ENV PATH=/usr/local/cuda/bin:$PATH \
