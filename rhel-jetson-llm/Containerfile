@@ -8,20 +8,15 @@ FROM ${BASE_IMAGE} AS builder
 
 ARG LLAMA_CPP_REF=master
 ARG CUDA_ARCH=87
-# Qwen3.8 currently only ships as 27B (and larger), which cannot fit in 8 GB.
-# Default: Qwen3.5-4B (same qwen3_5 hybrid Gated DeltaNet architecture), ~3 GB at Q4_K_M.
-# Bigger option (~5.3 GB, tight on 8 GB):
-#   MODEL_REPO=bartowski/Qwen_Qwen3.5-9B-GGUF  MODEL_FILE=Qwen_Qwen3.5-9B-Q4_K_M.gguf
-# When a small Qwen3.8 GGUF appears, just change these two args.
 ARG MODEL_REPO=bartowski/Qwen_Qwen3.5-4B-GGUF
 ARG MODEL_FILE=Qwen_Qwen3.5-4B-Q4_K_M.gguf
 
 # NOTE: CUDA package names depend on the JetPack repo shipped in the base image.
 # Check with: dnf search cuda-toolkit cuda-nvcc
-RUN dnf -y install \
-      gcc gcc-c++ make cmake git python3-pip libcurl-devel \
-      cuda-toolkit \
-    && dnf clean all
+#RUN dnf -y install \
+#      gcc gcc-c++ make cmake git python3-pip libcurl-devel \
+#      cuda-toolkit \
+#    && dnf clean all
 
 ENV PATH=/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64
