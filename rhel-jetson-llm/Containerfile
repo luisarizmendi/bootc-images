@@ -1,0 +1,66 @@
+# Builds a basic RHEL Bootc image for NVIDIA Tegra SOC with Nvidia CDI enabled
+
+# The packages from NVIDIA's repo are only built for specific versions of RHEL, be sure to pin the exact tag
+FROM registry.redhat.io/rhel9/rhel-bootc:9.4-1730828483
+
+# Install NVIDIA jetpack components
+# Mask nvpower.service (causes kernel panic)
+# Remove upstream host1x kernel module (conflicts with nvidia provided one)
+
+# Container image with nvidia jetson RPMs
+COPY --from=quay.io/luisarizmendi/rhel-nvidia-jetson-rpms:9.4 /artifacts/ /tmp/artifact/
+
+RUN dnf -y install /tmp/artifact/*.rpm && \
+    dnf clean all && \
+    systemctl mask nvfancontrol.service nvpmodel.service nvpower.service && \
+    rm -r /tmp/artifact && \
+    rm /usr/lib/modules/*/kernel/drivers/gpu/host1x/host1x.ko.xz
+
+# Regenerate initrd (just in case)
+RUN set -x; kver=$(cd /usr/lib/modules && echo *); dracut -vf /usr/lib/modules/$kver/initramfs.img $kver
+
+# Install NVIDIA container toolkit
+# netavark is required for podman network to work
+RUN curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo | \
+    sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo && \
+    sudo dnf -y install \
+      netavark \
+      nvidia-container-toolkit && \
+    sudo dnf clean all
+
+# Create and enable a systemd service to generate the NVIDIA CDI YAML file
+RUN cat <<'EOF' > /etc/systemd/system/nvidia-cdi.service
+[Unit]
+Description=Generate the nvidia cdi yaml file
+After=multi-user.target systemd-modules-load.service
+
+[Service]
+Type=oneshot
+ExecStartPre=bash -c "echo 1 > /dev/nvgpu/igpu0/power"
+ExecStart=nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+ExecStartPost=bash -c "grep -q nvhost /etc/cdi/nvidia.yaml || (echo 'CDI spec incomplete, retrying...' && nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml)"
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+RUN systemctl enable nvidia-cdi
+
+# Modify bootc-generic-growpart service to remove virtualization condition
+# so that the root partition is expanded to fill the entire disk
+RUN sed -i '/ConditionVirtualization=vm/d' /usr/lib/systemd/system/bootc-generic-growpart.service
+
+# Load the i2c-dev kernel module at boot
+# for jetson_stats
+RUN cat <<EOF > /etc/modules-load.d/i2c-dev.conf
+i2c-dev
+EOF
+
+# Add kernel arguments for Jetson devices
+# disable selinux, and set the correct console device
+RUN cat <<EOF > /usr/lib/bootc/kargs.d/10-jetson.toml
+kargs = ["console=ttyTCU0,115200"]
+EOF
+

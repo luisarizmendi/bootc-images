@@ -1,66 +1,116 @@
-# Builds a basic RHEL Bootc image for NVIDIA Tegra SOC with Nvidia CDI enabled
+# syntax=docker/dockerfile:1
+ARG BASE_IMAGE=quay.io/redhat-user-workloads/jetpack-for-rhel-tenant/rhel-98-bootc:latest
 
-# The packages from NVIDIA's repo are only built for specific versions of RHEL, be sure to pin the exact tag
-FROM registry.redhat.io/rhel9/rhel-bootc:9.4-1730828483
+###############################################################################
+# Stage 1: build llama.cpp with CUDA for Jetson Orin (sm_87) and fetch model
+###############################################################################
+FROM ${BASE_IMAGE} AS builder
 
-# Install NVIDIA jetpack components
-# Mask nvpower.service (causes kernel panic)
-# Remove upstream host1x kernel module (conflicts with nvidia provided one)
+ARG LLAMA_CPP_REF=master
+ARG CUDA_ARCH=87
+# Qwen3.8 currently only ships as 27B (and larger), which cannot fit in 8 GB.
+# Default: Qwen3.5-4B (same qwen3_5 hybrid Gated DeltaNet architecture), ~3 GB at Q4_K_M.
+# Bigger option (~5.3 GB, tight on 8 GB):
+#   MODEL_REPO=bartowski/Qwen_Qwen3.5-9B-GGUF  MODEL_FILE=Qwen_Qwen3.5-9B-Q4_K_M.gguf
+# When a small Qwen3.8 GGUF appears, just change these two args.
+ARG MODEL_REPO=bartowski/Qwen_Qwen3.5-4B-GGUF
+ARG MODEL_FILE=Qwen_Qwen3.5-4B-Q4_K_M.gguf
 
-# Container image with nvidia jetson RPMs
-COPY --from=quay.io/luisarizmendi/rhel-nvidia-jetson-rpms:9.4 /artifacts/ /tmp/artifact/
+# NOTE: CUDA package names depend on the JetPack repo shipped in the base image.
+# Check with: dnf search cuda-toolkit cuda-nvcc
+RUN dnf -y install \
+      gcc gcc-c++ make cmake git python3-pip libcurl-devel \
+      cuda-toolkit \
+    && dnf clean all
 
-RUN dnf -y install /tmp/artifact/*.rpm && \
-    dnf clean all && \
-    systemctl mask nvfancontrol.service nvpmodel.service nvpower.service && \
-    rm -r /tmp/artifact && \
-    rm /usr/lib/modules/*/kernel/drivers/gpu/host1x/host1x.ko.xz
+ENV PATH=/usr/local/cuda/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64
 
-# Regenerate initrd (just in case)
-RUN set -x; kver=$(cd /usr/lib/modules && echo *); dracut -vf /usr/lib/modules/$kver/initramfs.img $kver
+RUN git clone https://github.com/ggml-org/llama.cpp /src/llama.cpp \
+    && cd /src/llama.cpp && git checkout ${LLAMA_CPP_REF} \
+    && cmake -B build \
+         -DGGML_CUDA=ON \
+         -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH} \
+         -DGGML_NATIVE=ON \
+         -DLLAMA_CURL=ON \
+         -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build --config Release -j"$(nproc)" --target llama-server \
+    && cmake --install build --prefix /opt/llama.cpp
 
-# Install NVIDIA container toolkit
-# netavark is required for podman network to work
-RUN curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo | \
-    sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo && \
-    sudo dnf -y install \
-      netavark \
-      nvidia-container-toolkit && \
-    sudo dnf clean all
+RUN pip3 install --no-cache-dir "huggingface_hub[cli]" \
+    && mkdir -p /models \
+    && huggingface-cli download ${MODEL_REPO} ${MODEL_FILE} --local-dir /models
 
-# Create and enable a systemd service to generate the NVIDIA CDI YAML file
-RUN cat <<'EOF' > /etc/systemd/system/nvidia-cdi.service
+###############################################################################
+# Stage 2: final bootc image
+###############################################################################
+FROM ${BASE_IMAGE}
+
+ARG MODEL_FILE=Qwen_Qwen3.5-4B-Q4_K_M.gguf
+
+# Runtime CUDA libs only (no compiler)
+RUN dnf -y install cuda-cudart libcurl \
+    && dnf clean all
+
+COPY --from=builder /opt/llama.cpp /opt/llama.cpp
+COPY --from=builder /models/${MODEL_FILE} /usr/share/models/${MODEL_FILE}
+
+RUN echo "/opt/llama.cpp/lib64" > /etc/ld.so.conf.d/llama-cpp.conf \
+    && echo "/opt/llama.cpp/lib"  >> /etc/ld.so.conf.d/llama-cpp.conf \
+    && ldconfig \
+    && ln -s /opt/llama.cpp/bin/llama-server /usr/local/bin/llama-server
+
+# Runtime config (edit on the device: /etc/llama-server.env)
+RUN cat > /etc/llama-server.env <<EOF
+MODEL_PATH=/usr/share/models/${MODEL_FILE}
+# 8 GB shared CPU/GPU memory: keep context modest and use a quantized KV cache
+CTX_SIZE=8192
+N_GPU_LAYERS=99
+KV_TYPE=q8_0
+PARALLEL=1
+# 0 = thinking off (faster, far fewer tokens); -1 = unlimited thinking
+REASONING_BUDGET=0
+HOST=0.0.0.0
+PORT=8080
+EOF
+
+RUN cat > /usr/lib/systemd/system/llama-server.service <<'EOF'
 [Unit]
-Description=Generate the nvidia cdi yaml file
-After=multi-user.target systemd-modules-load.service
+Description=llama.cpp server (Qwen3) on Jetson
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-Type=oneshot
-ExecStartPre=bash -c "echo 1 > /dev/nvgpu/igpu0/power"
-ExecStart=nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
-ExecStartPost=bash -c "grep -q nvhost /etc/cdi/nvidia.yaml || (echo 'CDI spec incomplete, retrying...' && nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml)"
-RemainAfterExit=yes
+EnvironmentFile=/etc/llama-server.env
+Environment=LD_LIBRARY_PATH=/usr/local/cuda/lib64
+# Unified memory lets the iGPU spill into system RAM instead of OOMing
+Environment=GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
+# Best-effort max performance mode (ignored if tools are absent)
+ExecStartPre=-/usr/sbin/nvpmodel -m 0
+ExecStartPre=-/usr/bin/jetson_clocks
+ExecStart=/usr/local/bin/llama-server \
+  --model ${MODEL_PATH} \
+  --ctx-size ${CTX_SIZE} \
+  --n-gpu-layers ${N_GPU_LAYERS} \
+  --cache-type-k ${KV_TYPE} --cache-type-v ${KV_TYPE} \
+  --parallel ${PARALLEL} \
+  --no-mmap \
+  --flash-attn on \
+  --reasoning-budget ${REASONING_BUDGET} \
+  --jinja \
+  --host ${HOST} --port ${PORT}
 Restart=on-failure
 RestartSec=5
+# Needs access to the Jetson GPU nodes
+SupplementaryGroups=video render
 
 [Install]
 WantedBy=multi-user.target
 EOF
-RUN systemctl enable nvidia-cdi
 
-# Modify bootc-generic-growpart service to remove virtualization condition
-# so that the root partition is expanded to fill the entire disk
-RUN sed -i '/ConditionVirtualization=vm/d' /usr/lib/systemd/system/bootc-generic-growpart.service
+RUN systemctl enable llama-server.service \
+    && (firewall-offline-cmd --add-port=8080/tcp || true)
 
-# Load the i2c-dev kernel module at boot
-# for jetson_stats
-RUN cat <<EOF > /etc/modules-load.d/i2c-dev.conf
-i2c-dev
-EOF
+LABEL org.opencontainers.image.description="RHEL 9.8 bootc + llama.cpp (CUDA) + Qwen3.5/3.8-family GGUF for Jetson Orin Nano"
 
-# Add kernel arguments for Jetson devices
-# disable selinux, and set the correct console device
-RUN cat <<EOF > /usr/lib/bootc/kargs.d/10-jetson.toml
-kargs = ["console=ttyTCU0,115200"]
-EOF
-
+RUN bootc container lint
