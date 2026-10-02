@@ -1,0 +1,17 @@
+[connection]
+id=enP8p1s0
+uuid=$(uuidgen)
+type=ethernet
+interface-name=enP8p1s0
+autoconnect=true
+
+[ethernet]
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=eui64
+method=auto
+
+[proxy]
