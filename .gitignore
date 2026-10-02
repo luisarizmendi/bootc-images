@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+*.db
+*.mp4
+*.mkv
+*.avi
+*.onnx
+*.engine
+.env
+!README.md
