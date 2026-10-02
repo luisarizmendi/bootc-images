@@ -45,7 +45,7 @@ RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
 
 # Create user and groups for the rootless containers
 RUN useradd -M -d /var/home/detector detector && \
-    grep video /usr/lib/group | tee -a /etc/group && \
+#    grep video /usr/lib/group | tee -a /etc/group && \
     usermod -aG video detector
 
 # Create the GPU group to access the GPU
