@@ -21,9 +21,7 @@ RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${B
     rm -rf /var/{cache,log} /var/lib/{dnf,rhsm} && \
     systemctl enable podman.service
 
-
 ##########
-
 # Additional packages
 RUN dnf -y install \
             tmux \
