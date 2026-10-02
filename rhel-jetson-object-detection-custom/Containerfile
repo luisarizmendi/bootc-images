@@ -49,7 +49,7 @@ RUN useradd -M -d /var/home/detector detector && \
     usermod -aG video detector
 
 # Create the GPU group to access the GPU
-RUN groupadd -r -g 980 gpu && \
+RUN groupadd -r -g 1980 gpu && \
     usermod -aG gpu detector && \
     systemctl enable tegra-dev-perms.service
 
