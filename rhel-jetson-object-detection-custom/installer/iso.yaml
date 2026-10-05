@@ -1,5 +1,7 @@
 label: "RHEL-BOOTC-Installer"
 grub2:
+  config:
+    timeout: 5
   entries:
     - name: "Install RHEL (bootc)"
       linux: "/images/pxeboot/vmlinuz inst.stage2=hd:LABEL=RHEL-BOOTC-Installer console=tty0 inst.text selinux=0"

@@ -56,7 +56,6 @@ RUN cat > /etc/profile.d/xdg-runtime-dir.sh << 'EOF'
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 EOF
 
-
 # Required for /run/user/1000 — use UID, not username
 RUN systemctl enable user-runtime-dir@1000.service && \
     systemctl enable user@1000.service
