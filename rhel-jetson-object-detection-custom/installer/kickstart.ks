@@ -23,6 +23,42 @@ if [ -z "$best" ]; then
 else
     echo "ignoredisk --only-use=$best" > /tmp/part-include.ks
 fi
+
+
+
+##################################################################################
+# Configure Wi-Fi for the installer.
+mkdir -p /etc/NetworkManager/system-connections
+
+cat > /etc/NetworkManager/system-connections/redhat.nmconnection <<'EOF'
+[connection]
+id=redhat
+type=wifi
+interface-name=w1P1p1s0
+autoconnect=true
+
+[wifi]
+mode=infrastructure
+ssid=redhat
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=redhatrules
+
+[ipv4]
+method=auto
+
+[ipv6]
+method=auto
+EOF
+
+chmod 600 /etc/NetworkManager/system-connections/redhat.nmconnection
+
+# Reload NetworkManager so the installer can see the connection.
+nmcli connection reload
+##################################################################################
+
+
 %end
 
 %include /tmp/part-include.ks
@@ -32,8 +68,7 @@ clearpart --all --initlabel --disklabel=gpt
 reqpart --add-boot
 part / --grow --fstype xfs
 
-#network --bootproto=dhcp --device=link --activate --onboot=on
-network --bootproto=dhcp --device=wlP1p1s0 --activate --onboot=on --ssid="redhat" --password="redhatrules"
+network --bootproto=dhcp --device=link --activate --onboot=on
 
 user --name=admin --password="$6$/7rTITXmb1xpkB52$1L6xl53aTMayMIqhdxh6VxLGguy2CUxxf50oqcJGElUgcyx/8nTIEBKtvP6erLtwwLS5B6ZyCEDkrZMGC8ydN/" --iscrypted --groups=wheel
 rootpw --lock
