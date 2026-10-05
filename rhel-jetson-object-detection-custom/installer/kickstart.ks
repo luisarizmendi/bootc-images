@@ -56,7 +56,7 @@ chmod 600 /etc/NetworkManager/system-connections/redhat.nmconnection
 
 # Reload NetworkManager so the installer can see the connection.
 nmcli connection reload
-nmcli connection up redhat
+nmcli connection up redhat ifname wlP1p1s0
 ##################################################################################
 
 
