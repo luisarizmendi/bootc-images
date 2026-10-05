@@ -34,7 +34,7 @@ cat > /etc/NetworkManager/system-connections/redhat.nmconnection <<'EOF'
 [connection]
 id=redhat
 type=wifi
-interface-name=w1P1p1s0
+interface-name=wlP1p1s0
 autoconnect=true
 
 [wifi]
@@ -56,6 +56,7 @@ chmod 600 /etc/NetworkManager/system-connections/redhat.nmconnection
 
 # Reload NetworkManager so the installer can see the connection.
 nmcli connection reload
+nmcli connection up redhat
 ##################################################################################
 
 
