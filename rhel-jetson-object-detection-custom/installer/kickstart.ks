@@ -31,7 +31,7 @@ fi
 # Configure Wi-Fi for the installer
 ##################################################################################
 WIFI_DEV="wlP1p1s0"
-WIFI_CON="redhat"
+WIFI_CON="wifi"
 
 mkdir -p /etc/NetworkManager/system-connections
 cat > /etc/NetworkManager/system-connections/${WIFI_CON}.nmconnection <<EOF

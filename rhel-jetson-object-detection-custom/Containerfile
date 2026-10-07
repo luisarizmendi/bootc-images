@@ -33,15 +33,14 @@ RUN dnf -y install \
 
 # nvidia-container-tools
 RUN curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo | tee /etc/yum.repos.d/nvidia-container-toolkit.repo && \
-    dnf config-manager --enable nvidia-container-toolkit-experimental 
-#    && \
-#    export NVIDIA_CONTAINER_TOOLKIT_VERSION=1.20.1-1 && \
-#    dnf install -y \
-#      nvidia-container-toolkit-${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
-#      nvidia-container-toolkit-base-${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
-#      libnvidia-container-tools-${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
-#      libnvidia-container1-${NVIDIA_CONTAINER_TOOLKIT_VERSION} && \
-#    dnf -y clean all
+    dnf config-manager --enable nvidia-container-toolkit-experimental && \
+    export NVIDIA_CONTAINER_TOOLKIT_VERSION=1.20.1-1 && \
+    dnf install -y \
+      nvidia-container-toolkit-${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+      nvidia-container-toolkit-base-${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+      libnvidia-container-tools-${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+      libnvidia-container1-${NVIDIA_CONTAINER_TOOLKIT_VERSION} && \
+    dnf -y clean all
 
 ### Copy files
 COPY files/ /

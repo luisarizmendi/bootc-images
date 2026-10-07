@@ -5,12 +5,12 @@ autoconnect=true
 interface-name=wlP1p1s0
 
 [wifi]
-ssid=YOUR_WIFI_NAME
+ssid=redhat
 mode=infrastructure
 
 [wifi-security]
 key-mgmt=wpa-psk
-psk=YOUR_WIFI_PASSWORD
+psk=redhatrules
 
 [ipv4]
 method=auto
