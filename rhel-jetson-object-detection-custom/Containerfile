@@ -1,4 +1,4 @@
-FROM quay.io/redhat-user-workloads/jetpack-for-rhel-tenant/rhel-102-bootc:7.2.1_6.12.0-211.61.1_100526151449
+FROM quay.io/redhat-user-workloads/jetpack-for-rhel-tenant/rhel-102-bootc:7.2.1_6.12.0-211.61.1_093026125848
 
 ARG BASE_IMAGE_RELEASE='10'
 ARG RHEM_RELEASE='1.3'
