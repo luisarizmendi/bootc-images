@@ -25,6 +25,7 @@ RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${B
 
 # Additional packages
 RUN dnf -y install \
+            NetworkManager-wifi \
             curl \
             tmux \
             python3-pip \
