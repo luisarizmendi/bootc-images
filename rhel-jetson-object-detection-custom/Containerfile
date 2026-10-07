@@ -78,7 +78,3 @@ RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-
 ################################################################################
 ###################### ADDED CUSTOMIZATIONS ####################################
 ################################################################################
-
-RUN dnf -y install NetworkManager-wifi && \
-    dnf -y clean all && \
-    chmod 600 /etc/NetworkManager/system-connections/wifi.nmconnection
