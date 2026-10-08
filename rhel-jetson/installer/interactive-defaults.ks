@@ -1,1 +1,0 @@
-bootc --source-imgref=registry:ghcr.io/luisarizmendi/bootc-rhel-jetson:latest --target-imgref=ghcr.io/luisarizmendi/bootc-rhel-jetson:latest

@@ -29,6 +29,7 @@ AddDevice=nvidia.com/gpu=all
 Network=host
 SecurityLabelDisable=true
 
+Environment=LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/nvidia:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
 Environment=SHM_FRAME_NAME=camera_frame
 Environment=ZMQ_PUB_PORT=5555
 Environment=ZMQ_TOPIC=detections

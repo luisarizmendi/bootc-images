@@ -25,8 +25,9 @@ Volume=/var/home/detector/videos:/videos:ro
 
 # Pass all video devices so auto-detection works.
 # Restrict to a specific device if preferred.
-AddDevice=/dev/video0
-# AddDevice=/dev/video1
+# Hypen included to make the container run even if the device is missing
+AddDevice=-/dev/video0
+# AddDevice=-/dev/video1
 
 Network=host
 SecurityLabelDisable=true
