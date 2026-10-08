@@ -39,6 +39,7 @@ Environment=VID_DIR=/videos
 Environment=SHM_FRAME_NAME=camera_frame
 Environment=VIEWER_JPEG_QUALITY=80
 Environment=LOG_LEVEL=INFO
+Environment=EXIT_ON_HOST_CAMERA=1
 
 # Overrides (uncomment to use):
 # Environment=CAMERA_DEVICE=/dev/video0
@@ -49,6 +50,7 @@ Environment=LOG_LEVEL=INFO
 [Service]
 Restart=always
 RestartSec=3
+ExecStartPre=-/usr/bin/systemctl --user daemon-reload
 
 [Install]
 WantedBy=default.target
