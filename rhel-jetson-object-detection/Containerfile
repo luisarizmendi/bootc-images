@@ -78,6 +78,9 @@ EOF
 RUN systemctl enable user-runtime-dir@1000.service && \
     systemctl enable user@1000.service
 
+# To run models fixed with bootc image
+RUN chown -R detector:detector /usr/local/share/models
+
 ################################################################################
 ######################    EMBED IMAGES   #######################################
 ################################################################################

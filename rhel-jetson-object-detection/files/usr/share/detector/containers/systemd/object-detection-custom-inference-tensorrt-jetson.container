@@ -23,7 +23,10 @@ PodmanArgs=--group-add=keep-groups
 
 Volume=/dev/shm:/dev/shm
 # Persist the built .engine across restarts (write access required):
-Volume=/var/home/detector/models:/opt/models
+# If you want use read/write:
+#Volume=/var/home/detector/models:/opt/models
+# or if you want to fix the model to the bootc image:
+Volume=/usr/local/share/models:/opt/models
 
 AddDevice=nvidia.com/gpu=all
 Network=host
