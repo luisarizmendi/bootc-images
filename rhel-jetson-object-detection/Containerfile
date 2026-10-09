@@ -58,7 +58,7 @@ RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
 
 ### Install jtop
 RUN pip3 install -U jetson-stats && \
-    /root/.local/bin/jtop --install-service
+    jtop --install-service
 
 
 ################################################################################
