@@ -1,0 +1,21 @@
+[Unit]
+Description=Create and enable swap file on /var
+DefaultDependencies=no
+After=local-fs.target
+Before=swap.target
+ConditionPathExists=!/var/swapfile.disabled
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c '\
+if [ ! -f /var/swapfile ]; then \
+  dd if=/dev/zero of=/var/swapfile bs=1M count=8192 status=none && \
+  chmod 600 /var/swapfile && \
+  mkswap /var/swapfile; \
+fi; \
+swapon --priority 10 /var/swapfile || true'
+ExecStop=/sbin/swapoff /var/swapfile
+
+[Install]
+WantedBy=multi-user.target
