@@ -58,8 +58,8 @@ RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
 
 ### Install jtop
 RUN pip3 install -U jetson-stats && \
-    jtop --install-service
-
+    jtop --install-service && \
+    ln -s /var/lib/jtop /usr/local/jtop
 
 ################################################################################
 ######################    USER FOR ROOTLESS CONTAINERS  ########################
