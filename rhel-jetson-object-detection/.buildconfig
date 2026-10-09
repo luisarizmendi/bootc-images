@@ -6,7 +6,7 @@ platforms: linux/arm64
 ##### INSTALLABLE ARTIFACTS
 # Valid values: true, false, auto
 # Note auto creates an instalable artifact if it does not exist any
-artifacts: true
+artifacts: auto
 
 # Valid values: bootc-generic-iso, bootc-installer, qcow2, vmdk, raw, ami, vhd, gce
 #artifact_formats: bootc-installer
@@ -24,7 +24,7 @@ installer_base: anaconda-rhel10-base
 ##### VERSION MANAGEMENT
 # Valid values: true, false
 # When true, keeps the existing version instead of incrementing (default: false)
-keep_version: true
+keep_version: false
 
 # Single arg
 #build_args: BASE_IMAGE=registry.example.com/mybase:latest

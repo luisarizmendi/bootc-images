@@ -54,6 +54,13 @@ RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
     chmod +x /usr/local/bin/* && \
     systemctl enable mac-hostname.service && \
     systemctl enable swapfile.service
+
+
+### Install jtop
+RUN pip3 install -U jetson-stats && \
+    /root/.local/bin/jtop --install-service
+
+
 ################################################################################
 ######################    USER FOR ROOTLESS CONTAINERS  ########################
 ################################################################################
