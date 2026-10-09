@@ -51,7 +51,7 @@ RUN curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-co
 COPY files/ /
 
 RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
-    chmod +x /usr/local/bin/set-hostname-from-mac.sh && \
+    chmod +x /usr/local/bin/* && \
     systemctl enable mac-hostname.service && \
     systemctl enable swapfile.service
 ################################################################################

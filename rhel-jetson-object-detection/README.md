@@ -49,4 +49,4 @@ After installation and the first boot:
 
 ## Important Note
 
-If inference is not working, first try removing the `model.engine` file under `/home/detector/models/` and restart the inference container. This will generate a new file for your hardware (it may take some time—check the container logs).
+If using models in a read/write partition, and the inference is not working, first try removing the `model.engine` file under `/home/detector/models/` and restart the inference container. This will generate a new file for your hardware (it may take some time—check the container logs).

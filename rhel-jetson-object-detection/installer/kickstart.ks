@@ -83,7 +83,7 @@ done
 cat > /tmp/wifi-watchdog.sh <<'EOF'
 #!/bin/bash
 WIFI_DEV="wlP1p1s0"
-WIFI_CON="redhat"
+WIFI_CON="wifi"
 for i in $(seq 1 720); do
     if ! nmcli -t -f TYPE,STATE device | grep -Eq '^(ethernet|wifi):connected$'; then
         nmcli radio wifi on
