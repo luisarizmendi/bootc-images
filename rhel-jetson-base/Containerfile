@@ -21,6 +21,9 @@ RUN curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-co
     dnf -y clean all
 
 
+### Copy files
+#COPY files/ /
+
 
 ################################################################################
 ######################    USER FOR ROOTLESS CONTAINERS  ########################
@@ -33,8 +36,9 @@ RUN useradd -M -d /var/home/detector detector && \
 
 # Create the GPU group to access the GPU
 RUN groupadd -r -g 1980 gpu && \
-    usermod -aG gpu detector && \
-    systemctl enable tegra-dev-perms.service
+    usermod -aG gpu detector 
+    
+    #&& systemctl enable tegra-dev-perms.service
 
 # Environment required by systemctl --user
 RUN cat > /etc/profile.d/xdg-runtime-dir.sh << 'EOF'
