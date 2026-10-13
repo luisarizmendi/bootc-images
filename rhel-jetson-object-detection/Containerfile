@@ -56,7 +56,7 @@ RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
     systemctl enable swapfile.service
 
 ### JETSON MAXN_SUPER BY DEFAULT   
-RUN chmod 755 /usr/libexec/nvpmodel-maxn-super.sh && \
+RUN chmod 755 /usr/local/bin/nvpmodel-maxn-super.sh && \
     systemctl enable nvpmodel-maxn-super.service
 
 ### Install jtop
