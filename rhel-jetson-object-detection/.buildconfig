@@ -24,7 +24,7 @@ installer_base: anaconda-rhel10-base
 ##### VERSION MANAGEMENT
 # Valid values: true, false
 # When true, keeps the existing version instead of incrementing (default: false)
-keep_version: false
+keep_version: true
 
 # Single arg
 #build_args: BASE_IMAGE=registry.example.com/mybase:latest
