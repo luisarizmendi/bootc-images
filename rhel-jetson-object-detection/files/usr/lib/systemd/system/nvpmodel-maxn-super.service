@@ -1,0 +1,14 @@
+[Unit]
+Description=Set Jetson power mode to MAXN_SUPER
+After=nvpmodel.service
+Requires=nvpmodel.service
+Before=jtop.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=LD_LIBRARY_PATH=/usr/lib64/nvidia
+ExecStart=/usr/local/bin/nvpmodel-maxn-super.sh
+
+[Install]
+WantedBy=multi-user.target

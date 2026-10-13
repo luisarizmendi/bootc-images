@@ -55,6 +55,9 @@ RUN chmod -R 600 /etc/NetworkManager/system-connections/ && \
     systemctl enable mac-hostname.service && \
     systemctl enable swapfile.service
 
+### JETSON MAXN_SUPER BY DEFAULT   
+RUN chmod 755 /usr/libexec/nvpmodel-maxn-super.sh && \
+    systemctl enable nvpmodel-maxn-super.service
 
 ### Install jtop
 RUN pip3 install -U jetson-stats && \
@@ -101,3 +104,5 @@ RUN chmod 755 /usr/local/bin/embed_image.sh && \
 RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-camera-capture:latest --user detector
 RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-inference-tensorrt-jetson:latest --user detector
 RUN /usr/local/bin/embed_image.sh quay.io/luisarizmendi/object-detection-custom-stream-viewer:latest --user detector
+
+
