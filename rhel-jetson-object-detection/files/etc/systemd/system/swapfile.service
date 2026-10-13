@@ -1,8 +1,7 @@
 [Unit]
 Description=Create and enable swap file on /var
 DefaultDependencies=no
-After=local-fs.target
-Before=swap.target
+RequiresMountsFor=/var
 ConditionPathExists=!/var/swapfile.disabled
 
 [Service]
