@@ -24,3 +24,8 @@ if [ -f /tmp/my-cockpit.te ]; then
     restorecon -Rv /usr && \
     rm -f /tmp/my-cockpit.{te,mod,pp}
 fi
+
+
+###############################################################
+## DONE
+touch /var/lib/firstboot.done
