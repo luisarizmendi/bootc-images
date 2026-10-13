@@ -25,6 +25,12 @@ RUN curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-co
 COPY files/ /
 
 
+
+### Install jtop
+RUN pip3 install -U jetson-stats && \
+    jtop --install-service && \
+    ln -s /var/lib/jtop /usr/local/jtop
+    
 ################################################################################
 ######################    USER FOR ROOTLESS CONTAINERS  ########################
 ################################################################################
