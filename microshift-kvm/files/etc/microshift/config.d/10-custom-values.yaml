@@ -1,5 +1,0 @@
-debugging:
-    # Valid values are: "Normal", "Debug", "Trace", "TraceAll".
-    logLevel: Normal
-network:
-  serviceNodePortRange: 30000-32767
