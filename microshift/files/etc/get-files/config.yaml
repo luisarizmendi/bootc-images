@@ -1,68 +1,136 @@
+# get-files configuration
+#
 # Field descriptions:
 # - type: http, https, or container (required)
 # - source: URL for http/https, container image reference for container (required)
 # - destination: Local file path where the file will be saved (required)
-# - container_file_path: Path to file inside container (required for container type)
-# - owner: File owner in user:group format (optional)
-# - mode: File permissions in octal format as string, e.g., "0755" (optional)
-# - selinux_context: SELinux security context (optional)
-# - force: Set to true to force re-download even if file exists (optional, default: false)
-
+# - container_file_path: Path to file inside a container image (required for container)
+# - owner: File owner in user:group format, for example root:root (optional)
+# - mode: File permissions in octal format, for example "0755" (optional)
+# - selinux_context: SELinux context applied with chcon (optional)
+#
+# - when_exists: What to do if destination already exists (optional):
+#     skip         - do nothing; this is the default
+#     replace      - always download and replace the destination
+#     if-different - download to a temporary file and replace only if content changed
+#
+# - post_commands: A YAML list of commands run after a successful update (optional).
+#                  Commands execute through "bash -c", so only trusted administrators
+#                  should be allowed to edit this configuration.
+#
+# - post_commands_when:
+#     changed - run commands only when a new/changed file is installed (default)
+#     always  - run commands even if the file was skipped or unchanged
+#
+# - force: Legacy option retained for compatibility:
+#     force: true is equivalent to when_exists: replace
 
 files:
-    ## test-vm disk
- # - type: https
- #   source: https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2
- #   destination: /var/lib/libvirt/images/test-vm.raw
- #   owner: qemu:qemu
- #   mode: "0755"
- #   selinux_context: system_u:object_r:svirt_image_t:s0:c140,c832
+
+####
+# For PoC, and since this repo is public, this is the way that the pull-secret will be injected post-deployment. In production a better secret-handling must put in place.
+####
+  - type: http
+    source: http://192.168.122.1:8180/openshift-pull-secret
+    destination: /etc/crio/openshift-pull-secret
+    owner: root:root
+    mode: "0600"
+    when_exists: if-different
+    post_commands:
+      - systemctl restart microshift.service
+
 
 ##################################################################
-## EXAMPLES
-##
-#    # Download a binary via HTTPS
-#  - type: https
-#    source: https://example.com/bin/myapp
-#    destination: /usr/local/bin/myapp
-#    owner: root:root
-#    mode: "0755"
+# EXAMPLES
+##################################################################
 
-#  # Download a configuration file with SELinux context
-#  - type: http
-#    source: http://config.example.com/app.conf
-#    destination: /etc/myapp/app.conf
-#    owner: myapp:myapp
-#    mode: "0644"
-#    selinux_context: system_u:object_r:etc_t:s0
+  # Download a binary only if it is not already installed.
+  #
+  # - type: https
+  #   source: https://example.com/bin/myapp
+  #   destination: /usr/local/bin/myapp
+  #   owner: root:root
+  #   mode: "0755"
+  #   when_exists: skip
 
-#  # Extract binary from container image
-#  - type: container
-#    source: ghcr.io/myorg/bootc-app-tar:latest
-#    container_file_path: /app/binary
-#    destination: /opt/myapp/binary
-#    owner: myapp:myapp
-#    mode: "0755"
-#    force: true
+  # Download a configuration file and restart its service only when
+  # the downloaded configuration differs from the installed version.
+  #
+  # - type: http
+  #   source: http://config.example.com/app.conf
+  #   destination: /etc/myapp/app.conf
+  #   owner: myapp:myapp
+  #   mode: "0644"
+  #   selinux_context: system_u:object_r:etc_t:s0
+  #   when_exists: if-different
+  #   post_commands:
+  #     - systemctl restart myapp.service
+  #     - systemctl is-active --quiet myapp.service
 
+  # Always retrieve and replace a file, even when the content is identical.
+  #
+  # - type: https
+  #   source: https://example.com/bin/myapp
+  #   destination: /usr/local/bin/myapp
+  #   owner: root:root
+  #   mode: "0755"
+  #   when_exists: replace
 
-#  # Extract configuration from container with SELinux context
-#  - type: container
-#    source: ghcr.io/myorg/bootc-config-tar:v1.0
-#    container_file_path: /config/config.yaml
-#    destination: /etc/myapp/config.yaml
-#    owner: root:root
-#    mode: "0600"
-#    selinux_context: system_u:object_r:etc_t:s0
+  # Extract a binary from a container image and restart a systemd unit
+  # only if the binary changed.
+  #
+  # - type: container
+  #   source: ghcr.io/myorg/bootc-app-tar:latest
+  #   container_file_path: /app/binary
+  #   destination: /opt/myapp/binary
+  #   owner: myapp:myapp
+  #   mode: "0755"
+  #   when_exists: if-different
+  #   post_commands:
+  #     - systemctl try-restart myapp.service
 
-#  # Download script without specific ownership or permissions
-#  - type: https
-#    source: https://raw.githubusercontent.com/user/repo/main/script.sh
-#    destination: /usr/local/bin/script.sh
-#    mode: "0755"
+  # Extract a configuration file from a container, always replace it,
+  # and run several commands afterwards.
+  #
+  # - type: container
+  #   source: ghcr.io/myorg/bootc-config-tar:v1.0
+  #   container_file_path: /config/config.yaml
+  #   destination: /etc/myapp/config.yaml
+  #   owner: root:root
+  #   mode: "0600"
+  #   selinux_context: system_u:object_r:etc_t:s0
+  #   when_exists: replace
+  #   post_commands:
+  #     - systemctl daemon-reload
+  #     - systemctl restart myapp.service
+  #     - systemctl is-active --quiet myapp.service
 
-#  # Download data file with minimal configuration
-#  - type: http
-#    source: http://data.example.com/data.json
-#    destination: /var/lib/myapp/data.json
+  # Run a command every time the script runs, even if data is unchanged.
+  #
+  # - type: http
+  #   source: http://data.example.com/data.json
+  #   destination: /var/lib/myapp/data.json
+  #   when_exists: if-different
+  #   post_commands_when: always
+  #   post_commands:
+  #     - /usr/local/bin/myapp-maintenance-check.sh
+
+  # Legacy syntax: equivalent to when_exists: replace.
+  #
+  # - type: https
+  #   source: https://raw.githubusercontent.com/user/repo/main/script.sh
+  #   destination: /usr/local/bin/script.sh
+  #   mode: "0755"
+  #   force: true
+
+  # Example large VM disk download. Use if-different to avoid replacing
+  # it when the remote content is the same.
+  #
+  # - type: https
+  #   source: https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2
+  #   destination: /var/lib/libvirt/images/test-vm.raw
+  #   owner: qemu:qemu
+  #   mode: "0644"
+  #   selinux_context: system_u:object_r:svirt_image_t:s0:c140,c832
+  #   when_exists: if-different
 

@@ -1,5 +1,0 @@
-
-- if:
-  - path: /etc/pki/ca-trust/source/anchors/ca.crt
-    op: [created, updated, removed]
-  run: chmod 644 /etc/pki/ca-trust/source/anchors/ca.crt && update-ca-trust extract

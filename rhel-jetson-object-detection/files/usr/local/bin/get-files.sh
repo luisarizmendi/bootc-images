@@ -1,47 +1,33 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-# get-files.sh - Download files from multiple sources based on configuration
+# get-files.sh - Download files from HTTP(S) or container images using YAML configuration.
 # Usage: get-files.sh [config-file]
-#
-# The YAML parsing is done with awk (no yq needed). It supports the flat
-# structure below: a top-level "files:" list whose items have simple
-# "key: value" pairs (quoted or unquoted, with optional trailing comments).
-#
-#   files:
-#     - type: http
-#       source: https://example.com/file.bin
-#       destination: /var/lib/foo/file.bin
-#       owner: root:root
-#       mode: "0644"
-#       selinux_context: system_u:object_r:var_lib_t:s0
-#       force: true
-#     - type: container
-#       source: quay.io/example/image:latest
-#       container_file_path: /opt/model.onnx
-#       destination: /var/lib/foo/model.onnx
 
 VERSION="1.1.0"
 DEFAULT_CONFIG="/etc/get-files/config.yaml"
 CONFIG_FILE="${1:-$DEFAULT_CONFIG}"
 LOG_ENABLED="${LOG_ENABLED:-1}"
 
-# Field separator used between parsed fields (ASCII Unit Separator).
-# It is a non-whitespace IFS character, so empty fields are preserved by `read`.
-FS_CHAR=$'\037'
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Logging function
+# Set by each processed entry.
+ENTRY_CHANGED=0
+ENTRY_STATE=""
+
 log() {
     local level="$1"
     shift
+
     if [[ "$LOG_ENABLED" == "1" ]]; then
-        echo -e "[$(date +'%Y-%m-%d %H:%M:%S')] ${level}: $*" >&2
+        printf '[%s] %b: %s\n' \
+            "$(date +'%Y-%m-%d %H:%M:%S')" \
+            "$level" \
+            "$*" >&2
     fi
 }
 
@@ -49,170 +35,187 @@ log_info() { log "${GREEN}INFO${NC}" "$@"; }
 log_warn() { log "${YELLOW}WARN${NC}" "$@"; }
 log_error() { log "${RED}ERROR${NC}" "$@"; }
 
-# Check if required commands are available
 check_requirements() {
     local missing=0
+    local command
 
-    if ! command -v curl &> /dev/null; then
-        log_error "curl is not installed"
-        missing=1
+    for command in curl yq cmp mktemp; do
+        if ! command -v "$command" >/dev/null 2>&1; then
+            log_error "$command is not installed"
+            missing=1
+        fi
+    done
+
+    if ! command -v podman >/dev/null 2>&1; then
+        log_warn "podman is not installed; container entries will fail"
     fi
 
-    if ! command -v awk &> /dev/null; then
-        log_error "awk is not installed (required for YAML parsing)"
-        missing=1
-    fi
-
-    if ! command -v podman &> /dev/null; then
-        log_warn "podman is not installed (required for container registry downloads)"
-    fi
-
-    if [[ $missing -eq 1 ]]; then
+    if [[ "$missing" -eq 1 ]]; then
         exit 1
     fi
 }
 
-# Minimal YAML reader for the "files:" list.
-# Prints one line per entry with fields separated by $FS_CHAR, in this order:
-#   type, source, destination, owner, mode, selinux_context, container_file_path, force
-read -r -d '' AWK_PARSER <<'AWK_EOF' || true
-function trim(s) {
-    sub(/^[ \t]+/, "", s)
-    sub(/[ \t]+$/, "", s)
-    return s
+validate_when_exists() {
+    case "$1" in
+        skip|replace|if-different)
+            return 0
+            ;;
+        *)
+            log_error "Invalid when_exists value: $1"
+            log_error "Allowed values: skip, replace, if-different"
+            return 1
+            ;;
+    esac
 }
 
-function unquote(v) {
-    v = trim(v)
-    if (v ~ /^"/) {            # double-quoted: take text up to the next quote
-        sub(/^"/, "", v)
-        sub(/".*$/, "", v)
-        return v
-    }
-    if (v ~ /^'/) {            # single-quoted
-        sub(/^'/, "", v)
-        sub(/'.*$/, "", v)
-        return v
-    }
-    sub(/[ \t]+#.*$/, "", v)   # strip trailing comment on unquoted values
-    v = trim(v)
-    if (v == "null" || v == "~") v = ""
-    return v
+apply_metadata() {
+    local destination="$1"
+    local owner="$2"
+    local mode="$3"
+    local selinux_context="$4"
+
+    if [[ -n "$owner" && "$owner" != "null" ]]; then
+        if ! chown -- "$owner" "$destination"; then
+            log_warn "Failed to set ownership to $owner: $destination"
+        fi
+    fi
+
+    if [[ -n "$mode" && "$mode" != "null" ]]; then
+        if ! chmod -- "$mode" "$destination"; then
+            log_warn "Failed to set mode to $mode: $destination"
+        fi
+    fi
+
+    if [[ -n "$selinux_context" && "$selinux_context" != "null" ]]; then
+        if command -v chcon >/dev/null 2>&1; then
+            if ! chcon "$selinux_context" "$destination"; then
+                log_warn "Failed to set SELinux context to $selinux_context"
+            fi
+        else
+            log_warn "chcon is not available; SELinux context was not changed"
+        fi
+    fi
 }
 
-function flush(   i, out) {
-    if (!started) return
-    out = ""
-    for (i = 1; i <= nkeys; i++) {
-        out = out (i > 1 ? FSC : "") data[order[i]]
-    }
-    print out
-    split("", data)
-    started = 0
+set_default_http_mode() {
+    local file="$1"
+    local current_umask
+    local default_mode
+
+    # Match curl's usual behavior when creating a file directly.
+    current_umask=$(umask)
+    printf -v default_mode '%04o' "$((0666 & ~8#$current_umask))"
+
+    chmod "$default_mode" "$file" ||
+        log_warn "Failed to apply default mode $default_mode to $file"
 }
 
-BEGIN {
-    nkeys = split("type source destination owner mode selinux_context container_file_path force", order, " ")
-    in_files = 0
-    started = 0
+install_downloaded_file() {
+    local candidate="$1"
+    local destination="$2"
+    local owner="$3"
+    local mode="$4"
+    local selinux_context="$5"
+    local when_exists="$6"
+
+    ENTRY_CHANGED=0
+    ENTRY_STATE=""
+
+    if [[ ! -f "$candidate" ]]; then
+        log_error "Downloaded content is not a regular file: $candidate"
+        return 1
+    fi
+
+    # Avoid accidentally moving a file into an existing directory.
+    if [[ -d "$destination" && ! -L "$destination" ]]; then
+        log_error "Destination is a directory, but a file was expected: $destination"
+        return 1
+    fi
+
+    if [[ -e "$destination" || -L "$destination" ]]; then
+        case "$when_exists" in
+            skip)
+                rm -f -- "$candidate"
+                ENTRY_STATE="skipped"
+                log_info "File already exists, skipping: $destination"
+                return 0
+                ;;
+            if-different)
+                if [[ -f "$destination" ]] && cmp -s -- "$candidate" "$destination"; then
+                    rm -f -- "$candidate"
+                    ENTRY_STATE="unchanged"
+                    log_info "Downloaded content is unchanged: $destination"
+                    return 0
+                fi
+                ;;
+            replace)
+                ;;
+        esac
+    fi
+
+    # candidate is created in destination's directory, so this replacement is atomic.
+    if ! mv -f -- "$candidate" "$destination"; then
+        log_error "Failed to install file: $destination"
+        return 1
+    fi
+
+    apply_metadata "$destination" "$owner" "$mode" "$selinux_context"
+
+    ENTRY_CHANGED=1
+    ENTRY_STATE="updated"
+    log_info "Installed updated file: $destination"
 }
 
-{
-    sub(/\r$/, "")
-    line = $0
-
-    if (line ~ /^[ \t]*(#.*)?$/) next          # blank / comment
-    if (line ~ /^(---|\.\.\.)[ \t]*$/) next    # document markers
-
-    if (line ~ /^files:[ \t]*(#.*)?$/) {       # start of the list
-        in_files = 1
-        next
-    }
-    if (line ~ /^[^ \t-]/) {                   # another top-level key
-        flush()
-        in_files = 0
-        next
-    }
-    if (!in_files) next
-
-    if (line ~ /^[ \t]*-([ \t]|$)/) {          # new list item
-        flush()
-        sub(/^[ \t]*-[ \t]*/, "", line)
-        started = 1
-    }
-    if (!started) next
-
-    if (match(line, /^[ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t]*:/)) {
-        key = substr(line, 1, RLENGTH - 1)
-        val = substr(line, RLENGTH + 1)
-        key = trim(key)
-        data[key] = unquote(val)
-    }
-}
-
-END { flush() }
-AWK_EOF
-
-parse_yaml_files() {
-    awk -v FSC="$FS_CHAR" "$AWK_PARSER" "$1"
-}
-
-# Download file via HTTP/HTTPS
 download_http() {
     local source="$1"
     local destination="$2"
     local owner="$3"
     local mode="$4"
     local selinux_context="$5"
-    local force="$6"
+    local when_exists="$6"
+    local dest_dir
+    local candidate
 
-    # Check if file exists and skip if not forcing
-    if [[ -e "$destination" ]] && [[ "$force" != "true" ]]; then
+    # Preserve the original behavior: do not even download if policy is skip.
+    if [[ "$when_exists" == "skip" ]] &&
+       [[ -e "$destination" || -L "$destination" ]]; then
+        ENTRY_CHANGED=0
+        ENTRY_STATE="skipped"
         log_info "File already exists, skipping: $destination"
         return 0
     fi
 
-    log_info "Downloading from HTTP(S): $source"
-
-    # Create destination directory if it doesn't exist
-    local dest_dir=$(dirname "$destination")
+    dest_dir=$(dirname "$destination")
     mkdir -p "$dest_dir"
 
-    # Download with curl
-    if curl -Lk -o "$destination" "$source"; then
-        log_info "Successfully downloaded to: $destination"
+    if ! candidate=$(mktemp "${dest_dir}/.get-files.XXXXXX"); then
+        log_error "Unable to create temporary file in: $dest_dir"
+        return 1
+    fi
 
-        # Set ownership if specified
-        if [[ -n "$owner" && "$owner" != "null" ]]; then
-            chown "$owner" "$destination" || log_warn "Failed to set ownership to $owner"
-        fi
+    log_info "Downloading from HTTP(S): $source"
 
-        # Set permissions if specified
-        if [[ -n "$mode" && "$mode" != "null" ]]; then
-            chmod "$mode" "$destination" || log_warn "Failed to set permissions to $mode"
-        fi
-
-        # Set SELinux context if specified and available
-        if [[ -n "$selinux_context" && "$selinux_context" != "null" ]] && command -v chcon &> /dev/null; then
-            if chcon "$selinux_context" "$destination"; then
-                log_info "Set SELinux context to $selinux_context"
-                # Use restorecon to make the context persistent
-                if command -v restorecon &> /dev/null; then
-                    restorecon -v "$destination" || log_warn "restorecon failed, context may not persist"
-                fi
-            else
-                log_warn "Failed to set SELinux context to $selinux_context"
-            fi
-        fi
-
-        return 0
-    else
+    # --insecure preserves the original script's curl -k behavior.
+    if ! curl --fail --show-error --location --insecure \
+        --output "$candidate" -- "$source"; then
+        rm -f -- "$candidate"
         log_error "Failed to download from: $source"
+        return 1
+    fi
+
+    # mktemp creates mode 0600; restore curl-like defaults when no explicit mode exists.
+    if [[ -z "$mode" || "$mode" == "null" ]]; then
+        set_default_http_mode "$candidate"
+    fi
+
+    if ! install_downloaded_file \
+        "$candidate" "$destination" "$owner" "$mode" \
+        "$selinux_context" "$when_exists"; then
+        rm -f -- "$candidate"
         return 1
     fi
 }
 
-# Download file from container registry
 download_container() {
     local source="$1"
     local file_path="$2"
@@ -220,91 +223,61 @@ download_container() {
     local owner="$4"
     local mode="$5"
     local selinux_context="$6"
-    local force="$7"
+    local when_exists="$7"
+    local dest_dir
+    local candidate
+    local container_name
 
-    # Check if file exists and skip if not forcing
-    if [[ -e "$destination" ]] && [[ "$force" != "true" ]]; then
+    # Preserve the original behavior: do not access Podman if policy is skip.
+    if [[ "$when_exists" == "skip" ]] &&
+       [[ -e "$destination" || -L "$destination" ]]; then
+        ENTRY_CHANGED=0
+        ENTRY_STATE="skipped"
         log_info "File already exists, skipping: $destination"
         return 0
     fi
 
+    if ! command -v podman >/dev/null 2>&1; then
+        log_error "podman is required for container entries"
+        return 1
+    fi
+
+    dest_dir=$(dirname "$destination")
+    mkdir -p "$dest_dir"
+
+    if ! candidate=$(mktemp "${dest_dir}/.get-files.XXXXXX"); then
+        log_error "Unable to create temporary file in: $dest_dir"
+        return 1
+    fi
+    rm -f -- "$candidate"
+
+    container_name="get-files-${$}-${RANDOM}"
+
     log_info "Extracting from container: $source"
 
-    # Create temporary directory
-    local temp_dir=$(mktemp -d)
-    local container_name="temp-get-files-$$-$RANDOM"
-
-    # Cleanup function
-    cleanup_container() {
-        log_info "Cleaning up temporary container resources"
-        podman rm -f "$container_name" 2>/dev/null || true
-        podman rmi -f "$source" 2>/dev/null || true
-        rm -rf "$temp_dir"
-    }
-
-    trap cleanup_container EXIT
-
-    # Create container
-    if ! podman create --name "$container_name" "$source" &>/dev/null; then
+    if ! podman create --name "$container_name" "$source" >/dev/null; then
+        rm -f -- "$candidate"
         log_error "Failed to create container from: $source"
         return 1
     fi
 
-    # Copy files from container
-    if ! podman cp "${container_name}:${file_path}" "$temp_dir/" &>/dev/null; then
+    if ! podman cp "${container_name}:${file_path}" "$candidate"; then
+        podman rm -f "$container_name" >/dev/null 2>&1 || true
+        rm -f -- "$candidate"
         log_error "Failed to copy file from container: $file_path"
         return 1
     fi
 
-    # Extract the actual file from temp directory
-    local extracted_file="${temp_dir}${file_path}"
+    podman rm -f "$container_name" >/dev/null 2>&1 || true
 
-    if [[ ! -f "$extracted_file" ]] && [[ ! -d "$extracted_file" ]]; then
-        log_error "File not found in container: $file_path"
-        return 1
-    fi
-
-    # Create destination directory if it doesn't exist
-    local dest_dir=$(dirname "$destination")
-    mkdir -p "$dest_dir"
-
-    # Move file to destination
-    if cp -r "$extracted_file" "$destination"; then
-        log_info "Successfully extracted to: $destination"
-
-        # Set ownership if specified
-        if [[ -n "$owner" && "$owner" != "null" ]]; then
-            chown -R "$owner" "$destination" || log_warn "Failed to set ownership to $owner"
-        fi
-
-        # Set permissions if specified
-        if [[ -n "$mode" && "$mode" != "null" ]]; then
-            chmod "$mode" "$destination" || log_warn "Failed to set permissions to $mode"
-        fi
-
-        # Set SELinux context if specified and available
-        if [[ -n "$selinux_context" && "$selinux_context" != "null" ]] && command -v chcon &> /dev/null; then
-            if chcon -R "$selinux_context" "$destination"; then
-                log_info "Set SELinux context to $selinux_context"
-                # Use restorecon to make the context persistent
-                if command -v restorecon &> /dev/null; then
-                    restorecon -Rv "$destination" || log_warn "restorecon failed, context may not persist"
-                fi
-            else
-                log_warn "Failed to set SELinux context to $selinux_context"
-            fi
-        fi
-
-        cleanup_container
-        trap - EXIT
-        return 0
-    else
-        log_error "Failed to copy file to destination: $destination"
+    if ! install_downloaded_file \
+        "$candidate" "$destination" "$owner" "$mode" \
+        "$selinux_context" "$when_exists"; then
+        rm -f -- "$candidate"
         return 1
     fi
 }
 
-# Process a single configuration entry
 process_entry() {
     local type="$1"
     local source="$2"
@@ -313,18 +286,25 @@ process_entry() {
     local mode="${5:-}"
     local selinux_context="${6:-}"
     local container_file_path="${7:-}"
-    local force="${8:-false}"
+    local when_exists="${8:-skip}"
+
+    if ! validate_when_exists "$when_exists"; then
+        return 1
+    fi
 
     case "$type" in
         http|https|HTTP|HTTPS)
-            download_http "$source" "$destination" "$owner" "$mode" "$selinux_context" "$force"
+            download_http "$source" "$destination" "$owner" "$mode" \
+                "$selinux_context" "$when_exists"
             ;;
         container|CONTAINER)
             if [[ -z "$container_file_path" || "$container_file_path" == "null" ]]; then
-                log_error "Container file path not specified for: $source"
+                log_error "container_file_path is required for container source: $source"
                 return 1
             fi
-            download_container "$source" "$container_file_path" "$destination" "$owner" "$mode" "$selinux_context" "$force"
+
+            download_container "$source" "$container_file_path" "$destination" \
+                "$owner" "$mode" "$selinux_context" "$when_exists"
             ;;
         *)
             log_error "Unknown type: $type"
@@ -333,67 +313,139 @@ process_entry() {
     esac
 }
 
-# Parse and process YAML configuration file
+run_post_commands() {
+    local config="$1"
+    local index="$2"
+    local command
+    local commands_output
+
+    if ! commands_output=$(
+        yq eval -r "(.files[$index].post_commands // []) | .[]" "$config"
+    ); then
+        log_error "Failed to read post_commands for entry $((index + 1))"
+        return 1
+    fi
+
+    while IFS= read -r command; do
+        [[ -z "$command" ]] && continue
+
+        log_info "Running post-download command: $command"
+
+        # post_commands are trusted administrator-supplied configuration.
+        if ! bash -c "$command"; then
+            log_error "Post-download command failed: $command"
+            return 1
+        fi
+    done <<< "$commands_output"
+}
+
 parse_config() {
     local config="$1"
+    local file_count
+    local updated_count=0
+    local unchanged_count=0
+    local skipped_count=0
+    local fail_count=0
+    local i
 
     if [[ ! -f "$config" ]]; then
         log_error "Configuration file not found: $config"
-        exit 0
+        return 1
     fi
 
     log_info "Processing configuration file: $config"
 
-    # Load all entries (one per line, fields separated by $FS_CHAR)
-    local -a entries=()
-    mapfile -t entries < <(parse_yaml_files "$config")
+    file_count=$(yq eval -r '(.files // []) | length' "$config")
 
-    local file_count=${#entries[@]}
-
-    if [[ "$file_count" -eq 0 ]]; then
+    if [[ "$file_count" == "0" ]]; then
         log_warn "No files defined in configuration"
         return 0
     fi
 
-    local success_count=0
-    local fail_count=0
-    local skipped_count=0
+    for ((i = 0; i < file_count; i++)); do
+        local type
+        local source
+        local destination
+        local owner
+        local mode
+        local selinux_context
+        local container_file_path
+        local when_exists
+        local legacy_force
+        local post_commands_when
 
-    # Process each file entry
-    local i
-    for ((i=0; i<file_count; i++)); do
-        local type source destination owner mode selinux_context container_file_path force
-        IFS="$FS_CHAR" read -r type source destination owner mode selinux_context container_file_path force <<< "${entries[$i]}"
-        force="${force:-false}"
+        type=$(yq eval -r ".files[$i].type // \"\"" "$config")
+        source=$(yq eval -r ".files[$i].source // \"\"" "$config")
+        destination=$(yq eval -r ".files[$i].destination // \"\"" "$config")
+        owner=$(yq eval -r ".files[$i].owner // \"\"" "$config")
+        mode=$(yq eval -r ".files[$i].mode // \"\"" "$config")
+        selinux_context=$(yq eval -r ".files[$i].selinux_context // \"\"" "$config")
+        container_file_path=$(yq eval -r ".files[$i].container_file_path // \"\"" "$config")
+        when_exists=$(yq eval -r ".files[$i].when_exists // \"\"" "$config")
+        legacy_force=$(yq eval -r ".files[$i].force // false" "$config")
+        post_commands_when=$(yq eval -r ".files[$i].post_commands_when // \"changed\"" "$config")
 
-        log_info "Processing entry $((i+1))/$file_count: $type -> $destination"
-
-        # Check if file exists before processing
-        if [[ -e "$destination" ]] && [[ "$force" != "true" ]]; then
-            log_info "File already exists, skipping: $destination"
-            skipped_count=$((skipped_count + 1))
+        if [[ -z "$type" || -z "$source" || -z "$destination" ]]; then
+            log_error "Entry $((i + 1)) requires type, source, and destination"
+            fail_count=$((fail_count + 1))
             continue
         fi
 
-        if process_entry "$type" "$source" "$destination" "$owner" "$mode" "$selinux_context" "$container_file_path" "$force"; then
-            success_count=$((success_count + 1))
-        else
-            fail_count=$((fail_count + 1))
+        # Compatibility with the original configuration format.
+        if [[ -z "$when_exists" ]]; then
+            if [[ "$legacy_force" == "true" ]]; then
+                when_exists="replace"
+            else
+                when_exists="skip"
+            fi
         fi
+
+        case "$post_commands_when" in
+            changed|always)
+                ;;
+            *)
+                log_error "Invalid post_commands_when value '$post_commands_when' in entry $((i + 1))"
+                fail_count=$((fail_count + 1))
+                continue
+                ;;
+        esac
+
+        log_info "Processing entry $((i + 1))/$file_count: $type -> $destination"
+
+        if ! process_entry \
+            "$type" "$source" "$destination" "$owner" "$mode" \
+            "$selinux_context" "$container_file_path" "$when_exists"; then
+            fail_count=$((fail_count + 1))
+            continue
+        fi
+
+        if [[ "$ENTRY_CHANGED" == "1" || "$post_commands_when" == "always" ]]; then
+            if ! run_post_commands "$config" "$i"; then
+                fail_count=$((fail_count + 1))
+                continue
+            fi
+        fi
+
+        case "$ENTRY_STATE" in
+            updated)
+                updated_count=$((updated_count + 1))
+                ;;
+            unchanged)
+                unchanged_count=$((unchanged_count + 1))
+                ;;
+            skipped)
+                skipped_count=$((skipped_count + 1))
+                ;;
+        esac
     done
 
-    log_info "Processing complete: $success_count succeeded, $fail_count failed, $skipped_count skipped"
+    log_info "Processing complete: $updated_count updated, $unchanged_count unchanged, $skipped_count skipped, $fail_count failed"
 
-    if [[ $fail_count -gt 0 ]]; then
-        return 1
-    fi
-    return 0
+    [[ "$fail_count" -eq 0 ]]
 }
 
-# Main execution
 main() {
     log_info "get-files.sh version $VERSION"
-
     check_requirements
     parse_config "$CONFIG_FILE"
 }

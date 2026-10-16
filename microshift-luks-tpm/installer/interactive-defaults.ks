@@ -1,1 +1,0 @@
-bootc --source-imgref=registry:ghcr.io/luisarizmendi/bootc-microshift-luks-tpm:latest --target-imgref=ghcr.io/luisarizmendi/bootc-microshift-luks-tpm:latest

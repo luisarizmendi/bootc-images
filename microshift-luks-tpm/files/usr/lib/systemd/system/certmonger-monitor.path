@@ -1,6 +1,0 @@
-[Path]
-PathChanged=/var/lib/certmonger/certs
-Unit=certmonger-monitor.service
-
-[Install]
-WantedBy=multi-user.target

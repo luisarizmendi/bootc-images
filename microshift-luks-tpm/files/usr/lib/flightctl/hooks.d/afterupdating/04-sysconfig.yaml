@@ -1,9 +1,0 @@
-- if:
-  - path: /etc/sysconfig/
-    op: [created, updated]
-  run: for i in ${Files}; do systemctl daemon-reload ; systemctl restart $(basename "$i" | sed 's/\.[^.]*$//').service ; done  
-
-- if:
-  - path: /etc/sysconfig/
-    op: [removed]
-  run: for i in ${Files}; do systemctl stop $(basename "$i" | sed 's/\.[^.]*$//').service ; systemctl daemon-reload ; done  
