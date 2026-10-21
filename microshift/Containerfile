@@ -39,7 +39,7 @@ RUN dnf config-manager \
         --set-enabled fast-datapath-for-rhel-${BASE_IMAGE_RELEASE}-$(uname -m)-rpms  \
         --set-enabled gitops-${GITOPS_VER}-for-rhel-9-$(uname -m)-rpms
 
-RUN dnf install -y xz yq podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm microshift-gitops microshift-observability dialog \
+RUN dnf install -y helm xz yq podman-plugins inotify-tools firewalld microshift microshift-cert-manager microshift-olm microshift-gitops microshift-observability dialog \
                    cockpit cockpit-machines cockpit-podman cockpit-system cockpit-bridge cockpit-pcp cockpit-storaged cockpit-session-recording cockpit-navigator && \
     systemctl enable microshift && \
     systemctl enable microshift-observability && \
