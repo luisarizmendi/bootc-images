@@ -8,7 +8,7 @@ network --bootproto=dhcp --device=link --activate --onboot=on
 user --name=admin --password="$6$/7rTITXmb1xpkB52$1L6xl53aTMayMIqhdxh6VxLGguy2CUxxf50oqcJGElUgcyx/8nTIEBKtvP6erLtwwLS5B6ZyCEDkrZMGC8ydN/" --iscrypted --groups=wheel
 rootpw --lock
 
-bootc --source-imgref=registry:ghcr.io/luisarizmendi/bootc-microshift:latest --target-imgref=ghcr.io/luisarizmendi/bootc-microshift:latest
+bootc --source-imgref=registry:ghcr.io/luisarizmendi/bootc-microshift:v1 --target-imgref=ghcr.io/luisarizmendi/bootc-microshift:v1
 
 %pre --interpreter=/bin/bash
 exec > /tmp/pre.log 2>&1
