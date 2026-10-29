@@ -1,8 +1,58 @@
 #!/bin/sh
 set -Eeuo pipefail
 export MOZ_ENABLE_WAYLAND=1
-while ! curl -sf --connect-timeout 5 --expect100-timeout 5 https://www.genlogic.com/html5_demos/process_demo_full.html; do
-    echo "Waiting for the Kiosk APP to become available..."
-    sleep 10
-done
-exec /usr/bin/firefox --kiosk https://www.genlogic.com/html5_demos/process_demo_full.html
+
+CONFIG_FILE="/etc/kiosk/kiosk.conf"
+DEFAULT_URL="https://www.genlogic.com/html5_demos/process_demo_full.html"
+FIREFOX_PID=""
+
+get_url() {
+    if [ -f "$CONFIG_FILE" ]; then
+        # shellcheck source=/dev/null
+        . "$CONFIG_FILE"
+    fi
+    echo "${KIOSK_URL:-$DEFAULT_URL}"
+}
+
+wait_for_url() {
+    url="$1"
+    while ! curl -sf --connect-timeout 5 --expect100-timeout 5 "$url"; do
+        echo "Waiting for the Kiosk APP to become available at $url ..."
+        sleep 10
+    done
+}
+
+launch_firefox() {
+    url="$1"
+    wait_for_url "$url"
+    /usr/bin/firefox --kiosk "$url" &
+    FIREFOX_PID=$!
+}
+
+CURRENT_URL=$(get_url)
+launch_firefox "$CURRENT_URL"
+
+if command -v inotifywait >/dev/null 2>&1; then
+    while inotifywait -e close_write,create,move "$(dirname "$CONFIG_FILE")" >/dev/null 2>&1; do
+        NEW_URL=$(get_url)
+        if [ "$NEW_URL" != "$CURRENT_URL" ]; then
+            echo "URL changed: $CURRENT_URL -> $NEW_URL"
+            CURRENT_URL="$NEW_URL"
+            kill "$FIREFOX_PID" 2>/dev/null || true
+            wait "$FIREFOX_PID" 2>/dev/null || true
+            launch_firefox "$CURRENT_URL"
+        fi
+    done
+else
+    while true; do
+        sleep 5
+        NEW_URL=$(get_url)
+        if [ "$NEW_URL" != "$CURRENT_URL" ]; then
+            echo "URL changed: $CURRENT_URL -> $NEW_URL"
+            CURRENT_URL="$NEW_URL"
+            kill "$FIREFOX_PID" 2>/dev/null || true
+            wait "$FIREFOX_PID" 2>/dev/null || true
+            launch_firefox "$CURRENT_URL"
+        fi
+    done
+fi
