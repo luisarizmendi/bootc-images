@@ -29,6 +29,7 @@ RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${B
 
 # Additional packages
 RUN dnf -y install \
+            fuse-overlayfs \
             NetworkManager-wifi \
             curl \
             tmux \
