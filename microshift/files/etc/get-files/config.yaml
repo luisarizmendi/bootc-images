@@ -31,7 +31,7 @@ files:
 # For PoC, and since this repo is public, this is the way that the pull-secret will be injected post-deployment. In production a better secret-handling must put in place.
 ####
   - type: http
-    source: http://192.168.122.1:8180/openshift-pull-secret
+    source: http://192.168.121.1:8180/openshift-pull-secret
     destination: /etc/crio/openshift-pull-secret
     owner: root:root
     mode: "0600"
