@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Wait for the Flight Control enrollment QR and URL in the journal.
-# Generate the kiosk HTML page once both have been detected, then exit.
+# Create a kiosk HTML page and a QR SVG from the QR emitted by flightctl-agent.
+# No qrencode package is required.
 #
 
 set -Eeuo pipefail
@@ -9,6 +10,7 @@ set -Eeuo pipefail
 KIOSK_USER="kiosk"
 OUTPUT_HTML="/var/home/kiosk/.config/flightctl-enrollment-page.html"
 OUTPUT_DIR="$(dirname "$OUTPUT_HTML")"
+OUTPUT_QR_SVG="${OUTPUT_DIR}/flightctl-enrollment-qr.svg"
 
 if (( EUID != 0 )); then
   echo "ERROR: Run this script as root." >&2
@@ -22,6 +24,11 @@ fi
 
 if ! command -v journalctl >/dev/null 2>&1; then
   echo "ERROR: journalctl was not found." >&2
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "ERROR: python3 is required to render the QR as SVG." >&2
   exit 1
 fi
 
@@ -39,13 +46,70 @@ html_escape() {
     -e 's/"/\&quot;/g'
 }
 
+generate_qr_svg() {
+  local svg_tmp
+
+  svg_tmp="$(mktemp "${OUTPUT_DIR}/.flightctl-enrollment-qr.svg.XXXXXX")"
+
+  # Flight Control's terminal QR uses:
+  #   █ = black upper and lower modules
+  #   ▀ = black upper module
+  #   ▄ = black lower module
+  #     = white upper and lower modules
+  #
+  # Convert it into a standard SVG made of rectangles, avoiding font issues.
+  PYTHONIOENCODING=utf-8 python3 -c '
+import sys
+
+rows = [row.rstrip("\r") for row in sys.stdin.read().splitlines()]
+
+if not rows:
+    raise SystemExit("No QR rows received")
+
+width = max(len(row) for row in rows)
+height = len(rows) * 2
+modules = []
+
+for row_number, row in enumerate(rows):
+    for column, character in enumerate(row):
+        top = row_number * 2
+        bottom = top + 1
+
+        if character in ("█", "▀"):
+            modules.append(f"M{column} {top}h1v1h-1z")
+
+        if character in ("█", "▄"):
+            modules.append(f"M{column} {bottom}h1v1h-1z")
+
+path = "".join(modules)
+
+print(f"""<svg xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 {width} {height}"
+  role="img"
+  aria-label="Flight Control enrollment QR code"
+  shape-rendering="crispEdges">
+  <rect width="{width}" height="{height}" fill="#ffffff"/>
+  <path d="{path}" fill="#000000"/>
+</svg>""")
+' >"$svg_tmp" <<<"$QR_TEXT"
+
+  chown "$KIOSK_USER:$KIOSK_USER" "$svg_tmp"
+  chmod 0644 "$svg_tmp"
+  mv -f "$svg_tmp" "$OUTPUT_QR_SVG"
+
+  if command -v restorecon >/dev/null 2>&1; then
+    restorecon -F "$OUTPUT_QR_SVG" 2>/dev/null || true
+  fi
+}
+
 write_page() {
   local url_escaped
-  local qr_escaped
   local html_tmp
 
   url_escaped="$(printf '%s' "$ENROLLMENT_URL" | html_escape)"
-  qr_escaped="$(printf '%s' "$QR_TEXT" | html_escape)"
+
+  generate_qr_svg
+
   html_tmp="$(mktemp "${OUTPUT_DIR}/.flightctl-enrollment-page.html.XXXXXX")"
 
   cat >"$html_tmp" <<EOF
@@ -112,17 +176,6 @@ write_page() {
       color: #5f6368;
     }
 
-    .status {
-      display: inline-block;
-      margin-top: 2rem;
-      padding: 0.6rem 1rem;
-      border-radius: 999px;
-      background: #f1f3f4;
-      color: #3c4043;
-      font-size: 0.95rem;
-      font-weight: 600;
-    }
-
     .enrollment {
       margin-top: 2rem;
       padding-top: 2rem;
@@ -130,26 +183,16 @@ write_page() {
     }
 
     .qr-wrapper {
-      max-width: 100%;
-      overflow-x: auto;
-      margin: 1.25rem 0;
-      padding: 1rem;
-      border-radius: 0.75rem;
+      width: min(100%, 360px);
+      margin: 1.5rem auto;
+      padding: 0.75rem;
       background: #ffffff;
     }
 
     .qr {
-      display: inline-block;
-      margin: 0;
-      color: #000000;
-      background: #ffffff;
-      font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
-      font-size: clamp(5px, 1.15vw, 12px);
-      font-weight: 700;
-      line-height: 0.86;
-      letter-spacing: 0;
-      text-align: left;
-      white-space: pre;
+      display: block;
+      width: 100%;
+      height: auto;
     }
 
     .enroll-button {
@@ -188,22 +231,18 @@ write_page() {
       </svg>
     </div>
 
-    <h1>Ready to be enrolled!</h1>
-
     <section class="enrollment" aria-labelledby="enrollment-title">
-      <p id="enrollment-title">Scan the QR code or open the enrollment link.</p>
-
       <div class="qr-wrapper">
-        <pre class="qr" aria-label="Flight Control enrollment QR code">${qr_escaped}</pre>
+        <img
+          class="qr"
+          src="flightctl-enrollment-qr.svg"
+          alt="Flight Control enrollment QR code">
       </div>
 
       <a class="enroll-button" href="${url_escaped}">
         Open enrollment URL
       </a>
 
-      <a class="enrollment-url" href="${url_escaped}">
-        ${url_escaped}
-      </a>
     </section>
   </main>
 </body>
@@ -220,6 +259,7 @@ EOF
 
   echo "Flight Control enrollment page generated:"
   echo "  HTML: $OUTPUT_HTML"
+  echo "  QR:   $OUTPUT_QR_SVG"
   echo "  URL:  $ENROLLMENT_URL"
 }
 
@@ -230,11 +270,7 @@ COLLECTING_QR=0
 
 echo "Waiting for Flight Control enrollment QR and URL..."
 
-# Reads current-boot entries first, then follows new Flight Control log lines.
-# The script exits immediately after obtaining one complete QR and URL pair.
 while IFS= read -r line; do
-  # The QR begins with a full line of █ characters.
-  # Do not restart parsing on full █ rows inside an already captured QR.
   if (( ! COLLECTING_QR )) && [[ "$line" =~ ^█+$ ]]; then
     QR_CANDIDATE="${line}"$'\n'
     QR_TEXT=""

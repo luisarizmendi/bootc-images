@@ -5,7 +5,7 @@ Wants=flightctl-agent.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/generate-flightctl-enrollment-page.sh
+ExecStart=/usr/local/bin/generate-flightctl-enrollment-page.sh
 TimeoutStartSec=infinity
 RemainAfterExit=yes
 
