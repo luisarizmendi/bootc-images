@@ -37,7 +37,7 @@ RUN dnf config-manager \
 RUN useradd -m -d /var/home/kiosk kiosk 
 
 RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${BASE_IMAGE_RELEASE}.noarch.rpm 
-RUN dnf install -y yq stress shadow-utils gnome-kiosk gdm gnome-kiosk-script-session  git firefox \
+RUN dnf install -y yq stress shadow-utils gnome-kiosk gdm gnome-kiosk-script-session  git firefox tmux \
     && dnf clean all
 
 RUN mkdir -p /var/home/kiosk/.local/bin/ /etc/accountsservice/user-templates /etc/gdm/
