@@ -14,13 +14,13 @@ remote-access-service:
   service: {}
 
 system-info: [hostname, kernel, distroName, distroVersion, distroId, productName, productSerial, productUuid, biosVendor, biosVendor, netInterfaceDefault, netIpDefault, netMacDefault, gpu, memoryTotalKb, cpuCores, cpuProcessors, cpuModel]
-system-info-custom: [deviceVirt]
+system-info-custom: [deviceVirtualization]
+#label-from-systeminfo:
+#  arch: architecture
+#  os-name: distroName
+#  os-version: distroVersion
 label-from-systeminfo:
-  arch: architecture
-  os-name: distroName
-  os-version: distroVersion
-label-from-systeminfo:
-  virtualization: customInfo.deviceVirt
+  site: customInfo.deviceRegion
 default-labels:
-  bootc-image: rhel
+  fleet: simple
   env: demo

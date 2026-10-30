@@ -14,14 +14,13 @@ remote-access-service:
   service: {}
 
 system-info: [hostname, kernel, distroName, distroVersion, distroId, productName, productSerial, productUuid, biosVendor, biosVendor, netInterfaceDefault, netIpDefault, netMacDefault, gpu, memoryTotalKb, cpuCores, cpuProcessors, cpuModel]
-system-info-custom: [deviceVirt, microshiftVer]
+system-info-custom: [deviceVirtualization, microshiftVersion]
+#label-from-systeminfo:
+#  arch: architecture
+#  os-name: distroName
+#  os-version: distroVersion
 label-from-systeminfo:
-  arch: architecture
-  os-name: distroName
-  os-version: distroVersion
-label-from-systeminfo:
-  microshift-version: customInfo.microshiftVer
-  virtualization: customInfo.deviceVirt
+  site: customInfo.deviceRegion
 default-labels:
-  bootc-image: microshift
+  fleet: microshift-acm
   env: demo

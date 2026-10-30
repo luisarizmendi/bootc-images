@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# detect-region.sh
+#
+# Usage:
+#   ./detect-region.sh ES
+#   DEVICE_COUNTRY=ES ./detect-region.sh
+#   ./detect-region.sh
+#
+# Output:
+#   na | latam | emea | apac | anz | unknown
+
+set -euo pipefail
+
+# An explicit country is preferred over geolocation.
+country="${1:-${DEVICE_COUNTRY:-}}"
+
+# If no country was configured, infer it from the public egress IP.
+# Note: this can be inaccurate when the device uses a VPN or proxy.
+if [[ -z "$country" ]]; then
+  command -v curl >/dev/null 2>&1 || {
+    echo "ERROR: set DEVICE_COUNTRY, pass an ISO country code, or install curl" >&2
+    exit 1
+  }
+
+  country="$(
+    curl -4 --fail --silent --show-error \
+      --retry 2 --retry-delay 1 --max-time 10 \
+      https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null |
+    awk -F= '$1 == "loc" { print $2; exit }'
+  )"
+fi
+
+country="${country^^}"
+
+if [[ ! "$country" =~ ^[A-Z]{2}$ ]]; then
+  echo "ERROR: could not determine a valid ISO country code" >&2
+  exit 1
+fi
+
+case "$country" in
+  # North America
+  US|CA)
+    region="na"
+    ;;
+
+  # Australia and New Zealand
+  AU|NZ)
+    region="anz"
+    ;;
+
+  # Latin America and the Caribbean
+  MX|BZ|CR|SV|GT|HN|NI|PA|AR|BO|BR|CL|CO|EC|GY|PY|PE|SR|UY|VE|\
+  AG|BS|BB|CU|DM|DO|GD|HT|JM|KN|LC|VC|TT)
+    region="latam"
+    ;;
+
+  # Europe, Middle East and Africa
+  AL|AD|AM|AT|AZ|BA|BE|BG|BY|CH|CY|CZ|DE|DK|EE|ES|FI|FO|FR|GB|GE|\
+  GI|GR|HR|HU|IE|IM|IS|IT|LI|LT|LU|LV|MC|MD|ME|MK|MT|NL|NO|PL|PT|\
+  RO|RS|RU|SE|SI|SK|SM|TR|UA|VA|XK|\
+  AE|BH|IL|IQ|IR|JO|KW|LB|OM|PS|QA|SA|SY|YE|\
+  AO|BF|BI|BJ|BW|CD|CF|CG|CI|CM|CV|DJ|DZ|EG|EH|ER|ET|GA|GH|GM|GN|\
+  GQ|GW|KE|KM|LR|LS|LY|MA|MG|ML|MR|MU|MW|MZ|NA|NE|NG|RW|SC|SD|SL|\
+  SN|SO|SS|ST|SZ|TD|TG|TN|TZ|UG|ZA|ZM|ZW)
+    region="emea"
+    ;;
+
+  # Asia-Pacific, excluding Australia and New Zealand
+  AF|BD|BN|BT|CN|HK|ID|IN|JP|KG|KH|KP|KR|KZ|LA|LK|MM|MN|MO|MV|MY|\
+  NP|PH|PK|SG|TH|TJ|TL|TM|TW|UZ|VN|\
+  FJ|FM|KI|MH|NR|PG|PW|SB|TO|TV|VU|WS)
+    region="apac"
+    ;;
+
+  *)
+    region="unknown"
+    ;;
+esac
+
+echo "$region"
