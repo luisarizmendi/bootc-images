@@ -49,6 +49,7 @@ RUN dnf install -y helm xz yq podman-plugins inotify-tools firewalld microshift 
 COPY files/ /
 
 RUN chmod +x /usr/local/bin/* && \
+    chmod +x /usr/lib/flightctl/custom-info.d/* && \
     ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
     ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
 

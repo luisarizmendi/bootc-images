@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+virt="$(systemd-detect-virt 2>/dev/null || true)"
+
+case "$virt" in
+  kvm)
+    echo "KVM Virtual Machine"
+    ;;
+  none|"")
+    echo "Physical"
+    ;;
+  *)
+    echo "Virtualized/Container environment: $virt"
+    ;;
+esac

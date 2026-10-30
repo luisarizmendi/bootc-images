@@ -32,6 +32,7 @@ RUN dnf install -y greenboot greenboot-default-health-checks && \
 COPY files/ /
 
 RUN chmod +x /usr/local/bin/* && \
+    chmod +x /usr/lib/flightctl/custom-info.d/* && \
     systemctl enable first-boot.service
 
 ##   demo update ########################################

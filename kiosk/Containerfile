@@ -37,7 +37,7 @@ RUN dnf config-manager \
 RUN useradd -m -d /var/home/kiosk kiosk 
 
 RUN dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${BASE_IMAGE_RELEASE}.noarch.rpm 
-RUN dnf install -y yq stress shadow-utils gnome-kiosk gdm gnome-kiosk-script-session  git firefox tmux sl \
+RUN dnf install -y yq stress shadow-utils gnome-kiosk gdm gnome-kiosk-script-session  git firefox \
     && dnf clean all
 
 RUN mkdir -p /var/home/kiosk/.local/bin/ /etc/accountsservice/user-templates /etc/gdm/
@@ -47,6 +47,7 @@ COPY files/ /
 RUN chmod +x /var/home/kiosk/.local/bin/gnome-kiosk-script && \
     chown -R kiosk:kiosk /var/home/kiosk && \
     chmod +x /usr/local/bin/* && \
+    chmod +x /usr/lib/flightctl/custom-info.d/* && \
     ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
     ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
 

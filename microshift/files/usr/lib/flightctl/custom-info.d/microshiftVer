@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+microshift version -o json 2>/dev/null | jq -r '.gitVersion' \
+  || rpm -q --qf '%{VERSION}-%{RELEASE}\n' microshift
