@@ -1,0 +1,13 @@
+[Unit]
+Description=Generate Flight Control enrollment kiosk page
+After=systemd-journald.service flightctl-agent.service
+Wants=flightctl-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/generate-flightctl-enrollment-page.sh
+TimeoutStartSec=infinity
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -23,5 +23,5 @@ label-from-systeminfo:
   site: customInfo.deviceRegion
 default-labels:
   fleet: kiosk
-  function: solvent
+  function: pos
   env: demo

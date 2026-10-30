@@ -49,6 +49,7 @@ RUN chmod +x /var/home/kiosk/.local/bin/gnome-kiosk-script && \
     chmod +x /usr/local/bin/* && \
     chmod +x /usr/lib/flightctl/custom-info.d/* && \
     ln -s /usr/lib/systemd/system/first-boot.service /etc/systemd/system/multi-user.target.wants/first-boot.service && \
+    ln -s /usr/lib/systemd/system/flightctl-enrollment-page.service /etc/systemd/system/multi-user.target.wants/flightctl-enrollment-page.service && \
     ln -s /usr/lib/systemd/system/hook-files.service /etc/systemd/system/multi-user.target.wants/hook-files.service
 
 RUN systemctl set-default graphical.target && \
